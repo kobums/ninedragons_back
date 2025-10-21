@@ -1,0 +1,18 @@
+services:
+  back:
+    image: kobums/ninedragons-back:${VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ninedragons-back
+    ports:
+      - '8003:8003'
+    restart: unless-stopped
+    networks:
+      - ninedragons-network
+    volumes:
+      - /home/ninedragons-back/webdata:/usr/local/main/webdata
+
+networks:
+  ninedragons-network:
+    driver: bridge
