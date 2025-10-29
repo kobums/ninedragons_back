@@ -98,3 +98,136 @@ type TilePlayedPayload struct {
 	BlueTilePlayed bool      `json:"blueTilePlayed"`
 	RedTilePlayed  bool      `json:"redTilePlayed"`
 }
+
+// ==================== NumberChange Game Types ====================
+
+// TeamColor 팀 색상
+type TeamColor string
+
+const (
+	Team1 TeamColor = "team1"
+	Team2 TeamColor = "team2"
+)
+
+// NCMessageType 넘버체인지 메시지 타입
+type NCMessageType string
+
+const (
+	NCMsgJoinGame      NCMessageType = "nc_join_game"
+	NCMsgGameStart     NCMessageType = "nc_game_start"
+	NCMsgSubmitBlocks  NCMessageType = "nc_submit_blocks"
+	NCMsgRoundResult   NCMessageType = "nc_round_result"
+	NCMsgGameOver      NCMessageType = "nc_game_over"
+	NCMsgError         NCMessageType = "nc_error"
+	NCMsgPlayerJoined  NCMessageType = "nc_player_joined"
+	NCMsgWaitingPlayer NCMessageType = "nc_waiting_player"
+	NCMsgUseHidden     NCMessageType = "nc_use_hidden"
+)
+
+// NCClient 넘버체인지 클라이언트
+type NCClient struct {
+	ID     string
+	Conn   *websocket.Conn
+	Hub    *NCHub
+	Send   chan []byte
+	GameID string
+	Team   TeamColor
+}
+
+// NCGame 넘버체인지 게임
+type NCGame struct {
+	ID              string
+	Players         map[TeamColor]*NCClient
+	CurrentRound    int
+	Team1Score      int
+	Team2Score      int
+	AvailableBlocks map[TeamColor][]int // 각 팀의 남은 블록
+	RoundHistory    []NCRoundHistory
+	CurrentTeam     TeamColor
+	RoundSubmits    map[TeamColor]*NCSubmit
+	Team1UsedHidden bool
+	Team2UsedHidden bool
+	Ready           bool
+}
+
+// NCSubmit 라운드 제출 정보
+type NCSubmit struct {
+	Block1              int
+	Block2              int
+	UseHidden           bool
+	SelectedBlockChoice int // 히든 사용 시 선택 (1: 상대 블록1, 2: 상대 블록2)
+}
+
+// NCRoundHistory 라운드 히스토리
+type NCRoundHistory struct {
+	Round             int       `json:"round"`
+	Team1Block1       int       `json:"team1Block1"`
+	Team1Block2       int       `json:"team1Block2"`
+	Team1Total        int       `json:"team1Total"`
+	Team2Block1       int       `json:"team2Block1"`
+	Team2Block2       int       `json:"team2Block2"`
+	Team2Total        int       `json:"team2Total"`
+	Winner            TeamColor `json:"winner"`
+	Team1Hidden       bool      `json:"team1Hidden"`
+	Team2Hidden       bool      `json:"team2Hidden"`
+	Team1ReceivedBlock int      `json:"team1ReceivedBlock"`
+	Team2ReceivedBlock int      `json:"team2ReceivedBlock"`
+}
+
+// NCMessage 넘버체인지 메시지
+type NCMessage struct {
+	Type    NCMessageType `json:"type"`
+	Payload interface{}   `json:"payload,omitempty"`
+}
+
+// NCJoinGamePayload 게임 참가
+type NCJoinGamePayload struct {
+	PlayerName string    `json:"playerName"`
+	Team       TeamColor `json:"team,omitempty"`
+}
+
+// NCSubmitBlocksPayload 블록 제출
+type NCSubmitBlocksPayload struct {
+	Block1              int  `json:"block1"`
+	Block2              int  `json:"block2"`
+	UseHidden           bool `json:"useHidden,omitempty"`
+	SelectedBlockChoice int  `json:"selectedBlockChoice,omitempty"` // 히든 사용 시 선택 (1 또는 2)
+}
+
+// NCRoundResultPayload 라운드 결과
+type NCRoundResultPayload struct {
+	Round             int       `json:"round"`
+	Team1Block1       int       `json:"team1Block1"`
+	Team1Block2       int       `json:"team1Block2"`
+	Team1Total        int       `json:"team1Total"`
+	Team2Block1       int       `json:"team2Block1"`
+	Team2Block2       int       `json:"team2Block2"`
+	Team2Total        int       `json:"team2Total"`
+	Winner            TeamColor `json:"winner"`
+	Team1Score        int       `json:"team1Score"`
+	Team2Score        int       `json:"team2Score"`
+	Team1Hidden       bool      `json:"team1Hidden"`
+	Team2Hidden       bool      `json:"team2Hidden"`
+	Team1ReceivedBlock int      `json:"team1ReceivedBlock"`
+	Team2ReceivedBlock int      `json:"team2ReceivedBlock"`
+	NextTeam          TeamColor `json:"nextTeam"`
+}
+
+// NCGameOverPayload 게임 종료
+type NCGameOverPayload struct {
+	Winner     TeamColor `json:"winner"`
+	Team1Score int       `json:"team1Score"`
+	Team2Score int       `json:"team2Score"`
+	Reason     string    `json:"reason"` // "score_limit", "rounds_complete", "overtime"
+}
+
+// NCGameStartPayload 게임 시작
+type NCGameStartPayload struct {
+	YourTeam  TeamColor `json:"yourTeam"`
+	FirstTeam TeamColor `json:"firstTeam"`
+}
+
+// NCErrorPayload 에러
+type NCErrorPayload struct {
+	Message string `json:"message"`
+}
