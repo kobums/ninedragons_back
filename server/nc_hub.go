@@ -101,6 +101,8 @@ func (h *NCHub) handleGameMessage(gm NCGameMessage) {
 		h.handleJoinGame(gm.Client, gm.Message)
 	case NCMsgSubmitBlocks:
 		h.handleSubmitBlocks(gm.Client, gm.Message)
+	case NCMsgSelectBlock:
+		h.handleSelectBlock(gm.Client, gm.Message)
 	}
 }
 
@@ -267,6 +269,75 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 			// 게임 종료 처리
 			delete(h.games, game.ID)
 			log.Printf("[NC] Game %s ended. Winner: %s, Reason: %s", game.ID, winner, reason)
+		}
+	}
+}
+
+func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
+	game := h.games[client.GameID]
+	if game == nil {
+		h.sendToClient(client, NCMessage{
+			Type: NCMsgError,
+			Payload: NCErrorPayload{
+				Message: "게임을 찾을 수 없습니다",
+			},
+		})
+		return
+	}
+
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload NCSelectBlockPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	// 이미 제출한 상태에서 블록 선택 업데이트
+	if submit := game.RoundSubmits[client.Team]; submit != nil {
+		submit.SelectedBlockChoice = payload.SelectedBlockChoice
+		log.Printf("[NC] Team %s updated block choice: %d", client.Team, payload.SelectedBlockChoice)
+
+		// 양 팀이 모두 제출했는지 확인
+		if len(game.RoundSubmits) == 2 {
+			// 상대가 히든을 사용했는지 확인
+			var opponentTeam TeamColor
+			if client.Team == Team1 {
+				opponentTeam = Team2
+			} else {
+				opponentTeam = Team1
+			}
+
+			opponentSubmit := game.RoundSubmits[opponentTeam]
+			if opponentSubmit != nil && opponentSubmit.UseHidden {
+				// 블록 선택이 완료되었으므로 라운드 처리
+				result, err := game.ProcessRound()
+				if err != nil {
+					log.Printf("[NC] Error processing round: %v", err)
+					return
+				}
+
+				// 라운드 결과 전송
+				h.broadcastToGame(game, NCMessage{
+					Type:    NCMsgRoundResult,
+					Payload: result,
+				})
+
+				// 게임 종료 확인
+				isOver, reason := game.IsGameOver()
+				if isOver {
+					winner := game.GetWinner()
+					h.broadcastToGame(game, NCMessage{
+						Type: NCMsgGameOver,
+						Payload: NCGameOverPayload{
+							Winner:     winner,
+							Team1Score: game.Team1Score,
+							Team2Score: game.Team2Score,
+							Reason:     reason,
+						},
+					})
+
+					// 게임 종료 처리
+					delete(h.games, game.ID)
+					log.Printf("[NC] Game %s ended. Winner: %s, Reason: %s", game.ID, winner, reason)
+				}
+			}
 		}
 	}
 }

@@ -113,15 +113,16 @@ const (
 type NCMessageType string
 
 const (
-	NCMsgJoinGame      NCMessageType = "nc_join_game"
-	NCMsgGameStart     NCMessageType = "nc_game_start"
-	NCMsgSubmitBlocks  NCMessageType = "nc_submit_blocks"
-	NCMsgRoundResult   NCMessageType = "nc_round_result"
-	NCMsgGameOver      NCMessageType = "nc_game_over"
-	NCMsgError         NCMessageType = "nc_error"
-	NCMsgPlayerJoined  NCMessageType = "nc_player_joined"
-	NCMsgWaitingPlayer NCMessageType = "nc_waiting_player"
-	NCMsgUseHidden     NCMessageType = "nc_use_hidden"
+	NCMsgJoinGame       NCMessageType = "nc_join_game"
+	NCMsgGameStart      NCMessageType = "nc_game_start"
+	NCMsgSubmitBlocks   NCMessageType = "nc_submit_blocks"
+	NCMsgSelectBlock    NCMessageType = "nc_select_block"
+	NCMsgRoundResult    NCMessageType = "nc_round_result"
+	NCMsgGameOver       NCMessageType = "nc_game_over"
+	NCMsgError          NCMessageType = "nc_error"
+	NCMsgPlayerJoined   NCMessageType = "nc_player_joined"
+	NCMsgWaitingPlayer  NCMessageType = "nc_waiting_player"
+	NCMsgUseHidden      NCMessageType = "nc_use_hidden"
 )
 
 // NCClient 넘버체인지 클라이언트
@@ -193,6 +194,11 @@ type NCSubmitBlocksPayload struct {
 	Block2              int  `json:"block2"`
 	UseHidden           bool `json:"useHidden,omitempty"`
 	SelectedBlockChoice int  `json:"selectedBlockChoice,omitempty"` // 히든 사용 시 선택 (1 또는 2)
+}
+
+// NCSelectBlockPayload 블록 선택 (이미 제출한 후)
+type NCSelectBlockPayload struct {
+	SelectedBlockChoice int `json:"selectedBlockChoice"` // 히든 사용 시 선택 (1 또는 2)
 }
 
 // NCRoundResultPayload 라운드 결과
