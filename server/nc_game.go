@@ -137,9 +137,9 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 	// 블록 교환 로직
 	var team1ReceivedBlock, team2ReceivedBlock int
 
-	// 팀2가 히든 사용 시 팀1이 선택한 블록 받기, 아니면 팀1이 더 큰 블록 받기
+	// 레드가 히든 사용 시 블루이 선택한 블록 받기, 아니면 블루이 더 큰 블록 받기
 	if team2Submit.UseHidden {
-		// 팀2가 히든 사용 -> 팀1이 팀2의 블록1 또는 블록2 중 선택
+		// 레드가 히든 사용 -> 블루이 레드의 블록1 또는 블록2 중 선택
 		if team1Submit.SelectedBlockChoice == 0 {
 			return nil, fmt.Errorf("team1 must select a block (opponent used hidden)")
 		}
@@ -151,13 +151,13 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 			return nil, fmt.Errorf("invalid block choice")
 		}
 	} else {
-		// 팀2가 히든 사용 안함 -> 팀1이 팀2의 더 큰 블록 받기
+		// 레드가 히든 사용 안함 -> 블루이 레드의 더 큰 블록 받기
 		team1ReceivedBlock = max(team2Submit.Block1, team2Submit.Block2)
 	}
 
-	// 팀1이 히든 사용 시 팀2가 선택한 블록 받기, 아니면 팀2가 더 큰 블록 받기
+	// 블루이 히든 사용 시 레드가 선택한 블록 받기, 아니면 레드가 더 큰 블록 받기
 	if team1Submit.UseHidden {
-		// 팀1이 히든 사용 -> 팀2가 팀1의 블록1 또는 블록2 중 선택
+		// 블루이 히든 사용 -> 레드가 블루의 블록1 또는 블록2 중 선택
 		if team2Submit.SelectedBlockChoice == 0 {
 			return nil, fmt.Errorf("team2 must select a block (opponent used hidden)")
 		}
@@ -169,7 +169,7 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 			return nil, fmt.Errorf("invalid block choice")
 		}
 	} else {
-		// 팀1이 히든 사용 안함 -> 팀2가 팀1의 더 큰 블록 받기
+		// 블루이 히든 사용 안함 -> 레드가 블루의 더 큰 블록 받기
 		team2ReceivedBlock = max(team1Submit.Block1, team1Submit.Block2)
 	}
 

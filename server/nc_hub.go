@@ -109,7 +109,10 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	var payload NCJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
-	log.Printf("[NC] Player %s joining with team preference: %s", client.ID, payload.Team)
+	log.Printf("[NC] Player %s (%s) joining with team preference: %s", client.ID, payload.PlayerName, payload.Team)
+
+	// 플레이어 이름 저장
+	client.Name = payload.PlayerName
 
 	var game *NCGame
 
@@ -132,7 +135,7 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	team := game.AddPlayer(client, payload.Team)
 	client.Team = team
 
-	log.Printf("[NC] Player %s joined as %s. Total players: %d", client.ID, team, len(game.Players))
+	log.Printf("[NC] Player %s (%s) joined as %s. Total players: %d", client.ID, payload.PlayerName, team, len(game.Players))
 
 	// 플레이어에게 자신의 팀 알림
 	h.sendToClient(client, NCMessage{
@@ -148,6 +151,16 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 		game.Start()
 		log.Printf("[NC] Game %s is ready! Starting game with %d players", game.ID, len(game.Players))
 
+		// 플레이어 이름 가져오기
+		team1Name := ""
+		team2Name := ""
+		if p := game.Players[Team1]; p != nil {
+			team1Name = p.Name
+		}
+		if p := game.Players[Team2]; p != nil {
+			team2Name = p.Name
+		}
+
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerTeam, player := range game.Players {
 			h.sendToClient(player, NCMessage{
@@ -155,6 +168,8 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 				Payload: NCGameStartPayload{
 					YourTeam:  playerTeam,
 					FirstTeam: game.CurrentTeam,
+					Team1Name: team1Name,
+					Team2Name: team2Name,
 				},
 			})
 		}

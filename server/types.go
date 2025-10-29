@@ -126,12 +126,13 @@ const (
 
 // NCClient 넘버체인지 클라이언트
 type NCClient struct {
-	ID     string
-	Conn   *websocket.Conn
-	Hub    *NCHub
-	Send   chan []byte
-	GameID string
-	Team   TeamColor
+	ID         string
+	Name       string
+	Conn       *websocket.Conn
+	Hub        *NCHub
+	Send       chan []byte
+	GameID     string
+	Team       TeamColor
 }
 
 // NCGame 넘버체인지 게임
@@ -223,8 +224,10 @@ type NCGameOverPayload struct {
 
 // NCGameStartPayload 게임 시작
 type NCGameStartPayload struct {
-	YourTeam  TeamColor `json:"yourTeam"`
-	FirstTeam TeamColor `json:"firstTeam"`
+	YourTeam   TeamColor `json:"yourTeam"`
+	FirstTeam  TeamColor `json:"firstTeam"`
+	Team1Name  string    `json:"team1Name"`
+	Team2Name  string    `json:"team2Name"`
 }
 
 // NCErrorPayload 에러
