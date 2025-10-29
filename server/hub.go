@@ -107,7 +107,10 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	var payload JoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
-	log.Printf("Player %s joining with color preference: %s", client.ID, payload.Color)
+	log.Printf("Player %s (%s) joining with color preference: %s", client.ID, payload.PlayerName, payload.Color)
+
+	// 플레이어 이름 저장
+	client.Name = payload.PlayerName
 
 	var game *Game
 
@@ -179,6 +182,17 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	// 게임 시작 확인
 	if game.Ready {
 		log.Printf("Game %s is ready! Starting game with %d players", game.ID, len(game.Players))
+
+		// 플레이어 이름 가져오기
+		blueName := ""
+		redName := ""
+		if p := game.Players[Blue]; p != nil {
+			blueName = p.Name
+		}
+		if p := game.Players[Red]; p != nil {
+			redName = p.Name
+		}
+
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerColor, player := range game.Players {
 			h.sendToClient(player, Message{
@@ -186,6 +200,8 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 				Payload: GameStartPayload{
 					FirstPlayer: game.CurrentPlayer,
 					YourColor:   playerColor,
+					BlueName:    blueName,
+					RedName:     redName,
 				},
 			})
 		}

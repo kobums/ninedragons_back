@@ -29,6 +29,7 @@ const (
 // Client 구조체
 type Client struct {
 	ID     string
+	Name   string
 	Conn   *websocket.Conn
 	Hub    *Hub
 	Send   chan []byte
@@ -83,6 +84,8 @@ type GameOverPayload struct {
 type GameStartPayload struct {
 	FirstPlayer PlayerColor `json:"firstPlayer"`
 	YourColor   PlayerColor `json:"yourColor"`
+	BlueName    string      `json:"blueName"`
+	RedName     string      `json:"redName"`
 }
 
 type ErrorPayload struct {
