@@ -239,7 +239,19 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 
 	// 양 팀이 모두 제출했는지 확인
 	if len(game.RoundSubmits) == 2 {
-		// 라운드 처리
+		// 어느 한 팀이라도 히든을 사용했는지 확인
+		team1Submit := game.RoundSubmits[Team1]
+		team2Submit := game.RoundSubmits[Team2]
+
+		anyoneUsedHidden := (team1Submit != nil && team1Submit.UseHidden) || (team2Submit != nil && team2Submit.UseHidden)
+
+		// 누군가 히든을 사용했다면, 상대방의 블록 선택을 기다려야 함
+		if anyoneUsedHidden {
+			log.Printf("[NC] Someone used hidden, waiting for block selection in handleSelectBlock")
+			return
+		}
+
+		// 라운드 처리 (둘 다 히든을 사용하지 않은 경우만)
 		result, err := game.ProcessRound()
 		if err != nil {
 			log.Printf("[NC] Error processing round: %v", err)
