@@ -1,6 +1,10 @@
 package server
 
-import "github.com/gorilla/websocket"
+import (
+	"time"
+
+	"github.com/gorilla/websocket"
+)
 
 // Player 색상
 type PlayerColor string
@@ -48,6 +52,7 @@ type Game struct {
 	CurrentPlayer PlayerColor
 	RoundTiles    map[PlayerColor]*int
 	Ready         bool
+	StartedAt     time.Time
 }
 
 // 메시지 구조체들
@@ -153,6 +158,7 @@ type NCGame struct {
 	Team1UsedHidden bool
 	Team2UsedHidden bool
 	Ready           bool
+	StartedAt       time.Time
 }
 
 // NCSubmit 라운드 제출 정보
