@@ -1,6 +1,7 @@
 services:
   back:
-    image: kobums/ninedragons-back:${VERSION:-latest}
+    # 운영 이미지 이름은 언더스코어다. 하이픈(ninedragons-back)은 존재하지 않는다.
+    image: kobums/ninedragons_back:${VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile
