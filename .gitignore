@@ -20,6 +20,10 @@ go.work
 # Build output
 /bin/
 /dist/
+/ninedragons
+/server/ninedragons
+/main
+/server-bin
 
 # IDE
 .idea/
