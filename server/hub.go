@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
+	"unicode"
 )
 
 type Hub struct {
@@ -365,12 +367,28 @@ func clientName(client *Client) string {
 	return client.Name
 }
 
-// displayName 닉네임이 비어있을 때 대체 표기
+// maxLoggedNameLen 로그에 남길 닉네임 최대 길이
+const maxLoggedNameLen = 20
+
+// displayName 로그용 닉네임 표기
+// 닉네임은 클라이언트가 보낸 값이므로 개행·제어문자를 제거해 로그 위조를 막고 길이를 제한한다
 func displayName(name string) string {
 	if name == "" {
 		return "(이름없음)"
 	}
-	return name
+
+	safe := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, name)
+
+	runes := []rune(safe)
+	if len(runes) > maxLoggedNameLen {
+		return string(runes[:maxLoggedNameLen]) + "…"
+	}
+	return safe
 }
 
 // matchDuration 경기 소요 시간
