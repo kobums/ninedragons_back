@@ -20,7 +20,8 @@ go.work
 # Build output
 /bin/
 /dist/
-ninedragons
+/ninedragons
+/server/ninedragons
 /main
 /server-bin
 
