@@ -56,6 +56,7 @@ func (g *NCGame) IsReady() bool {
 // Start 게임 시작
 func (g *NCGame) Start() {
 	g.Ready = true
+	g.StartedAt = time.Now()
 	// 랜덤으로 시작 팀 결정
 	rand.Seed(time.Now().UnixNano())
 	if rand.Intn(2) == 0 {

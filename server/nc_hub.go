@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/google/uuid"
@@ -137,7 +138,8 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	team := game.AddPlayer(client, payload.Team)
 	client.Team = team
 
-	log.Printf("[NC] Player %s (%s) joined as %s. Total players: %d", client.ID, payload.PlayerName, team, len(game.Players))
+	log.Printf("[넘버체인지][입장] game=%s | %s=%s 게임 입장 (%d/2)",
+		game.ID, teamLabel(team), displayName(client.Name), len(game.Players))
 
 	// 플레이어에게 자신의 팀 알림
 	h.sendToClient(client, NCMessage{
@@ -162,6 +164,10 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 		if p := game.Players[Team2]; p != nil {
 			team2Name = p.Name
 		}
+
+		// 경기 시작 로그 (닉네임)
+		log.Printf("[넘버체인지][경기시작] game=%s | 팀1=%s | 팀2=%s | 선공=%s",
+			game.ID, displayName(team1Name), displayName(team2Name), game.CurrentTeam)
 
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerTeam, player := range game.Players {
@@ -280,7 +286,7 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 
 			// 게임 종료 처리
 			delete(h.games, game.ID)
-			log.Printf("[NC] Game %s ended. Winner: %s, Reason: %s", game.ID, winner, reason)
+			h.logMatchResult(game, winner, reason)
 		}
 	}
 }
@@ -347,11 +353,61 @@ func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
 
 					// 게임 종료 처리
 					delete(h.games, game.ID)
-					log.Printf("[NC] Game %s ended. Winner: %s, Reason: %s", game.ID, winner, reason)
+					h.logMatchResult(game, winner, reason)
 				}
 			}
 		}
 	}
+}
+
+// logMatchResult 경기 종료 결과 로그 (닉네임, 점수, 라운드, 소요 시간)
+func (h *NCHub) logMatchResult(game *NCGame, winner TeamColor, reason string) {
+	team1Name := displayName(ncClientName(game.Players[Team1]))
+	team2Name := displayName(ncClientName(game.Players[Team2]))
+
+	result := "무승부"
+	switch winner {
+	case Team1:
+		result = fmt.Sprintf("%s(팀1)", team1Name)
+	case Team2:
+		result = fmt.Sprintf("%s(팀2)", team2Name)
+	}
+
+	log.Printf("[넘버체인지][경기결과] game=%s | 승자=%s | 팀1=%s(%d점) vs 팀2=%s(%d점) | 라운드=%d | 종료사유=%s | 소요=%s",
+		game.ID, result, team1Name, game.Team1Score, team2Name, game.Team2Score,
+		game.CurrentRound-1, ncEndReason(reason), matchDuration(game.StartedAt))
+}
+
+// teamLabel 팀 한글 표기
+func teamLabel(team TeamColor) string {
+	switch team {
+	case Team1:
+		return "팀1"
+	case Team2:
+		return "팀2"
+	}
+	return string(team)
+}
+
+// ncClientName 클라이언트 이름 (nil 안전)
+func ncClientName(client *NCClient) string {
+	if client == nil {
+		return ""
+	}
+	return client.Name
+}
+
+// ncEndReason 종료 사유 한글 표기
+func ncEndReason(reason string) string {
+	switch reason {
+	case "score_limit":
+		return "7점 선취"
+	case "rounds_complete":
+		return "12라운드 종료"
+	case "overtime":
+		return "연장전"
+	}
+	return reason
 }
 
 func (h *NCHub) sendToClient(client *NCClient, message NCMessage) {

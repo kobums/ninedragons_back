@@ -2,7 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"strings"
+	"time"
+	"unicode"
 )
 
 type Hub struct {
@@ -168,7 +172,8 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 		return
 	}
 
-	log.Printf("Player %s joined as %s. Total players: %d", client.ID, color, len(game.Players))
+	log.Printf("[구룡투][입장] game=%s | %s=%s 게임 입장 (%d/2)",
+		game.ID, colorLabel(color), displayName(client.Name), len(game.Players))
 
 	// 플레이어에게 자신의 색상 알림
 	h.sendToClient(client, Message{
@@ -192,6 +197,11 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 		if p := game.Players[Red]; p != nil {
 			redName = p.Name
 		}
+
+		// 경기 시작 로그 (닉네임)
+		game.StartedAt = time.Now()
+		log.Printf("[구룡투][경기시작] game=%s | 파랑=%s | 빨강=%s | 선공=%s",
+			game.ID, displayName(blueName), displayName(redName), game.CurrentPlayer)
 
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerColor, player := range game.Players {
@@ -311,10 +321,82 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 				},
 			})
 
+			// 경기 결과 로그
+			h.logMatchResult(game, finalWinner)
+
 			// 게임 종료 처리
 			delete(h.games, game.ID)
 		}
 	}
+}
+
+// logMatchResult 경기 종료 결과 로그 (닉네임, 점수, 라운드, 소요 시간)
+func (h *Hub) logMatchResult(game *Game, winner PlayerColor) {
+	blueName := displayName(clientName(game.Players[Blue]))
+	redName := displayName(clientName(game.Players[Red]))
+
+	result := "무승부"
+	switch winner {
+	case Blue:
+		result = fmt.Sprintf("%s(파랑)", blueName)
+	case Red:
+		result = fmt.Sprintf("%s(빨강)", redName)
+	}
+
+	log.Printf("[구룡투][경기결과] game=%s | 승자=%s | 파랑=%s(%d승) vs 빨강=%s(%d승) | 라운드=%d | 소요=%s",
+		game.ID, result, blueName, game.BlueWins, redName, game.RedWins,
+		game.CurrentRound-1, matchDuration(game.StartedAt))
+}
+
+// colorLabel 색상 한글 표기
+func colorLabel(color PlayerColor) string {
+	switch color {
+	case Blue:
+		return "파랑"
+	case Red:
+		return "빨강"
+	}
+	return string(color)
+}
+
+// clientName 클라이언트 이름 (nil 안전)
+func clientName(client *Client) string {
+	if client == nil {
+		return ""
+	}
+	return client.Name
+}
+
+// maxLoggedNameLen 로그에 남길 닉네임 최대 길이
+const maxLoggedNameLen = 20
+
+// displayName 로그용 닉네임 표기
+// 닉네임은 클라이언트가 보낸 값이므로 개행·제어문자를 제거해 로그 위조를 막고 길이를 제한한다
+func displayName(name string) string {
+	if name == "" {
+		return "(이름없음)"
+	}
+
+	safe := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, name)
+
+	runes := []rune(safe)
+	if len(runes) > maxLoggedNameLen {
+		return string(runes[:maxLoggedNameLen]) + "…"
+	}
+	return safe
+}
+
+// matchDuration 경기 소요 시간
+func matchDuration(startedAt time.Time) string {
+	if startedAt.IsZero() {
+		return "-"
+	}
+	return time.Since(startedAt).Truncate(time.Second).String()
 }
 
 func (h *Hub) sendToClient(client *Client, message Message) {
