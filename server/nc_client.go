@@ -94,10 +94,11 @@ func ServeNCWs(hub *NCHub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &NCClient{
-		ID:   uuid.New().String(),
-		Hub:  hub,
-		Conn: conn,
-		Send: make(chan []byte, 256),
+		ID:        uuid.New().String(),
+		Hub:       hub,
+		Conn:      conn,
+		Send:      make(chan []byte, 256),
+		Connected: true,
 	}
 
 	client.Hub.register <- client

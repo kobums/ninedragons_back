@@ -79,9 +79,11 @@ func (g *Game) PlayTile(color PlayerColor, tile int) error {
 
 // DetermineWinner 라운드 승자 결정
 func (g *Game) DetermineWinner() PlayerColor {
-	blueTile := *g.RoundTiles[Blue]
-	redTile := *g.RoundTiles[Red]
+	return compareTiles(*g.RoundTiles[Blue], *g.RoundTiles[Red])
+}
 
+// compareTiles 두 타일의 승패 판정
+func compareTiles(blueTile, redTile int) PlayerColor {
 	// 무승부
 	if blueTile == redTile {
 		return ""
@@ -100,6 +102,27 @@ func (g *Game) DetermineWinner() PlayerColor {
 		return Blue
 	}
 	return Red
+}
+
+// History 완료된 라운드 기록 (재접속 상태 복원용)
+// UsedTiles는 라운드 순서대로 쌓이므로 인덱스가 곧 라운드 순번이다
+func (g *Game) History() []RoundHistoryEntry {
+	entries := []RoundHistoryEntry{}
+	completed := g.CurrentRound - 1
+	for i := 0; i < completed; i++ {
+		if i >= len(g.UsedTiles[Blue]) || i >= len(g.UsedTiles[Red]) {
+			break
+		}
+		blueTile := g.UsedTiles[Blue][i]
+		redTile := g.UsedTiles[Red][i]
+		entries = append(entries, RoundHistoryEntry{
+			Round:    i + 1,
+			BlueTile: blueTile,
+			RedTile:  redTile,
+			Winner:   compareTiles(blueTile, redTile),
+		})
+	}
+	return entries
 }
 
 // ProcessRound 라운드 처리

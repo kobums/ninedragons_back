@@ -28,17 +28,26 @@ const (
 	MsgError         MessageType = "error"
 	MsgPlayerJoined  MessageType = "player_joined"
 	MsgWaitingPlayer MessageType = "waiting_player"
+
+	// 재접속 관련
+	MsgRejoinGame           MessageType = "rejoin_game"
+	MsgGameState            MessageType = "game_state"
+	MsgOpponentDisconnected MessageType = "opponent_disconnected"
+	MsgOpponentReconnected  MessageType = "opponent_reconnected"
+	MsgSessionExpired       MessageType = "session_expired"
 )
 
 // Client 구조체
 type Client struct {
-	ID     string
-	Name   string
-	Conn   *websocket.Conn
-	Hub    *Hub
-	Send   chan []byte
-	GameID string
-	Color  PlayerColor
+	ID        string
+	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
+	Name      string
+	Conn      *websocket.Conn
+	Hub       *Hub
+	Send      chan []byte
+	GameID    string
+	Color     PlayerColor
+	Connected bool // Hub 고루틴에서만 접근
 }
 
 // Game 구조체
@@ -97,6 +106,41 @@ type ErrorPayload struct {
 	Message string `json:"message"`
 }
 
+type RejoinGamePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+type OpponentDisconnectedPayload struct {
+	Message      string `json:"message"`
+	GraceSeconds int    `json:"graceSeconds"`
+}
+
+// RoundHistoryEntry 완료된 라운드 기록 (재접속 상태 복원용)
+type RoundHistoryEntry struct {
+	Round    int         `json:"round"`
+	BlueTile int         `json:"blueTile"`
+	RedTile  int         `json:"redTile"`
+	Winner   PlayerColor `json:"winner"`
+}
+
+// GameStatePayload 재접속한 플레이어에게 보내는 게임 전체 상태
+type GameStatePayload struct {
+	GameID            string              `json:"gameId"`
+	YourColor         PlayerColor         `json:"yourColor"`
+	CurrentRound      int                 `json:"currentRound"`
+	BlueWins          int                 `json:"blueWins"`
+	RedWins           int                 `json:"redWins"`
+	BlueName          string              `json:"blueName"`
+	RedName           string              `json:"redName"`
+	CurrentPlayer     PlayerColor         `json:"currentPlayer"`
+	BlueUsedTiles     []int               `json:"blueUsedTiles"`
+	RedUsedTiles      []int               `json:"redUsedTiles"`
+	BlueRoundTile     *int                `json:"blueRoundTile"`
+	RedRoundTile      *int                `json:"redRoundTile"`
+	RoundHistory      []RoundHistoryEntry `json:"roundHistory"`
+	OpponentConnected bool                `json:"opponentConnected"`
+}
+
 type TilePlayedPayload struct {
 	Color        PlayerColor `json:"color"`
 	Tile         int         `json:"tile"`
@@ -131,17 +175,26 @@ const (
 	NCMsgPlayerJoined   NCMessageType = "nc_player_joined"
 	NCMsgWaitingPlayer  NCMessageType = "nc_waiting_player"
 	NCMsgUseHidden      NCMessageType = "nc_use_hidden"
+
+	// 재접속 관련
+	NCMsgRejoinGame           NCMessageType = "nc_rejoin_game"
+	NCMsgGameState            NCMessageType = "nc_game_state"
+	NCMsgOpponentDisconnected NCMessageType = "nc_opponent_disconnected"
+	NCMsgOpponentReconnected  NCMessageType = "nc_opponent_reconnected"
+	NCMsgSessionExpired       NCMessageType = "nc_session_expired"
 )
 
 // NCClient 넘버체인지 클라이언트
 type NCClient struct {
-	ID         string
-	Name       string
-	Conn       *websocket.Conn
-	Hub        *NCHub
-	Send       chan []byte
-	GameID     string
-	Team       TeamColor
+	ID        string
+	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
+	Name      string
+	Conn      *websocket.Conn
+	Hub       *NCHub
+	Send      chan []byte
+	GameID    string
+	Team      TeamColor
+	Connected bool // NCHub 고루틴에서만 접근
 }
 
 // NCGame 넘버체인지 게임
@@ -248,4 +301,37 @@ type NCGameStartPayload struct {
 // NCErrorPayload 에러
 type NCErrorPayload struct {
 	Message string `json:"message"`
+}
+
+// NCRejoinGamePayload 재접속 요청
+type NCRejoinGamePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+// NCOpponentDisconnectedPayload 상대 연결 끊김 알림
+type NCOpponentDisconnectedPayload struct {
+	Message      string `json:"message"`
+	GraceSeconds int    `json:"graceSeconds"`
+}
+
+// NCGameStatePayload 재접속한 플레이어에게 보내는 게임 전체 상태
+type NCGameStatePayload struct {
+	GameID                      string           `json:"gameId"`
+	YourTeam                    TeamColor        `json:"yourTeam"`
+	CurrentRound                int              `json:"currentRound"`
+	Team1Score                  int              `json:"team1Score"`
+	Team2Score                  int              `json:"team2Score"`
+	Team1Name                   string           `json:"team1Name"`
+	Team2Name                   string           `json:"team2Name"`
+	CurrentTeam                 TeamColor        `json:"currentTeam"`
+	YourBlocks                  []int            `json:"yourBlocks"`
+	OpponentBlocks              []int            `json:"opponentBlocks"`
+	RoundHistory                []NCRoundHistory `json:"roundHistory"`
+	YourUsedHidden              bool             `json:"yourUsedHidden"`
+	OpponentUsedHidden          bool             `json:"opponentUsedHidden"`
+	YouSubmitted                bool             `json:"youSubmitted"`
+	OpponentSubmitted           bool             `json:"opponentSubmitted"`
+	OpponentUsedHiddenThisRound bool             `json:"opponentUsedHiddenThisRound"`
+	YourBlockChoiceMade         bool             `json:"yourBlockChoiceMade"`
+	OpponentConnected           bool             `json:"opponentConnected"`
 }
