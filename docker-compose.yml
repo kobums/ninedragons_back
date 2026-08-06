@@ -9,6 +9,10 @@ services:
     ports:
       - '8003:8003'
     restart: unless-stopped
+    environment:
+      # 참가/게임시작 운영자 알림. 토픽이 비어 있으면 발송하지 않는다.
+      - NTFY_TOPIC=${NTFY_TOPIC:-}
+      - NTFY_SERVER=${NTFY_SERVER:-https://ntfy.sh}
     networks:
       - ninedragons-network
     volumes:
