@@ -353,6 +353,9 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	log.Printf("[넘버체인지][입장] game=%s | %s=%s 게임 입장 (%d/2)",
 		game.ID, teamLabel(team), displayName(client.Name), len(game.Players))
 
+	notify("넘버체인지 참가", fmt.Sprintf("%s(%s) 입장 (%d/2)",
+		displayName(client.Name), teamLabel(team), len(game.Players)))
+
 	// 플레이어에게 자신의 팀 알림
 	h.sendToClient(client, NCMessage{
 		Type: NCMsgPlayerJoined,
@@ -381,6 +384,9 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 		// 경기 시작 로그 (닉네임)
 		log.Printf("[넘버체인지][경기시작] game=%s | 팀1=%s | 팀2=%s | 선공=%s",
 			game.ID, displayName(team1Name), displayName(team2Name), game.CurrentTeam)
+
+		notify("넘버체인지 게임 시작", fmt.Sprintf("팀1 %s vs 팀2 %s",
+			displayName(team1Name), displayName(team2Name)))
 
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerTeam, player := range game.Players {

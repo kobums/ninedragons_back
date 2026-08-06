@@ -370,6 +370,9 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	log.Printf("[구룡투][입장] game=%s | %s=%s 게임 입장 (%d/2)",
 		game.ID, colorLabel(color), displayName(client.Name), len(game.Players))
 
+	notify("구룡투 참가", fmt.Sprintf("%s(%s) 입장 (%d/2)",
+		displayName(client.Name), colorLabel(color), len(game.Players)))
+
 	// 플레이어에게 자신의 색상 알림
 	h.sendToClient(client, Message{
 		Type: MsgPlayerJoined,
@@ -398,6 +401,9 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 		game.StartedAt = time.Now()
 		log.Printf("[구룡투][경기시작] game=%s | 파랑=%s | 빨강=%s | 선공=%s",
 			game.ID, displayName(blueName), displayName(redName), game.CurrentPlayer)
+
+		notify("구룡투 게임 시작", fmt.Sprintf("파랑 %s vs 빨강 %s",
+			displayName(blueName), displayName(redName)))
 
 		// 두 플레이어 모두에게 게임 시작 알림
 		for playerColor, player := range game.Players {
