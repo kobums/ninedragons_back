@@ -69,8 +69,17 @@ func (g *NCGame) Start() {
 
 // SubmitBlocks 블록 제출
 func (g *NCGame) SubmitBlocks(team TeamColor, block1, block2 int, useHidden bool, selectedBlockChoice int) error {
-	// 유효성 검사
-	if !g.hasBlock(team, block1) || !g.hasBlock(team, block2) {
+	// 이번 라운드에 이미 제출한 팀은 다시 제출할 수 없다
+	if g.RoundSubmits[team] != nil {
+		return fmt.Errorf("already submitted this round")
+	}
+
+	// 유효성 검사 (같은 숫자 두 개를 내려면 실제로 두 개를 보유해야 한다)
+	if block1 == block2 {
+		if g.countBlock(team, block1) < 2 {
+			return fmt.Errorf("invalid blocks")
+		}
+	} else if !g.hasBlock(team, block1) || !g.hasBlock(team, block2) {
 		return fmt.Errorf("invalid blocks")
 	}
 
@@ -103,6 +112,24 @@ func (g *NCGame) SubmitBlocks(team TeamColor, block1, block2 int, useHidden bool
 	return nil
 }
 
+// ReadyToProcess 라운드 처리에 필요한 제출·블록 선택이 모두 끝났는지 확인
+func (g *NCGame) ReadyToProcess() bool {
+	if len(g.RoundSubmits) != 2 {
+		return false
+	}
+	team1Submit := g.RoundSubmits[Team1]
+	team2Submit := g.RoundSubmits[Team2]
+
+	// 상대가 히든을 사용했으면 블록 선택이 완료돼야 한다
+	if team2Submit.UseHidden && team1Submit.SelectedBlockChoice == 0 {
+		return false
+	}
+	if team1Submit.UseHidden && team2Submit.SelectedBlockChoice == 0 {
+		return false
+	}
+	return true
+}
+
 // ProcessRound 라운드 처리
 func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 	// 양 팀이 모두 제출했는지 확인
@@ -112,6 +139,25 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 
 	team1Submit := g.RoundSubmits[Team1]
 	team2Submit := g.RoundSubmits[Team2]
+
+	// 점수·플래그를 변경하기 전에 필요한 블록 선택을 먼저 검증한다.
+	// (검증 전에 상태를 바꾸면 재호출 시 점수가 중복 가산된다)
+	if team2Submit.UseHidden {
+		if team1Submit.SelectedBlockChoice == 0 {
+			return nil, fmt.Errorf("team1 must select a block (opponent used hidden)")
+		}
+		if team1Submit.SelectedBlockChoice != 1 && team1Submit.SelectedBlockChoice != 2 {
+			return nil, fmt.Errorf("invalid block choice")
+		}
+	}
+	if team1Submit.UseHidden {
+		if team2Submit.SelectedBlockChoice == 0 {
+			return nil, fmt.Errorf("team2 must select a block (opponent used hidden)")
+		}
+		if team2Submit.SelectedBlockChoice != 1 && team2Submit.SelectedBlockChoice != 2 {
+			return nil, fmt.Errorf("invalid block choice")
+		}
+	}
 
 	// 합계 계산
 	team1Total := team1Submit.Block1 + team1Submit.Block2
@@ -138,39 +184,25 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 	// 블록 교환 로직
 	var team1ReceivedBlock, team2ReceivedBlock int
 
-	// 레드가 히든 사용 시 블루이 선택한 블록 받기, 아니면 블루이 더 큰 블록 받기
+	// 팀2가 히든 사용 시 팀1이 선택한 블록 받기, 아니면 팀1이 더 큰 블록 받기
 	if team2Submit.UseHidden {
-		// 레드가 히든 사용 -> 블루이 레드의 블록1 또는 블록2 중 선택
-		if team1Submit.SelectedBlockChoice == 0 {
-			return nil, fmt.Errorf("team1 must select a block (opponent used hidden)")
-		}
 		if team1Submit.SelectedBlockChoice == 1 {
 			team1ReceivedBlock = team2Submit.Block1
-		} else if team1Submit.SelectedBlockChoice == 2 {
-			team1ReceivedBlock = team2Submit.Block2
 		} else {
-			return nil, fmt.Errorf("invalid block choice")
+			team1ReceivedBlock = team2Submit.Block2
 		}
 	} else {
-		// 레드가 히든 사용 안함 -> 블루이 레드의 더 큰 블록 받기
 		team1ReceivedBlock = max(team2Submit.Block1, team2Submit.Block2)
 	}
 
-	// 블루이 히든 사용 시 레드가 선택한 블록 받기, 아니면 레드가 더 큰 블록 받기
+	// 팀1이 히든 사용 시 팀2가 선택한 블록 받기, 아니면 팀2가 더 큰 블록 받기
 	if team1Submit.UseHidden {
-		// 블루이 히든 사용 -> 레드가 블루의 블록1 또는 블록2 중 선택
-		if team2Submit.SelectedBlockChoice == 0 {
-			return nil, fmt.Errorf("team2 must select a block (opponent used hidden)")
-		}
 		if team2Submit.SelectedBlockChoice == 1 {
 			team2ReceivedBlock = team1Submit.Block1
-		} else if team2Submit.SelectedBlockChoice == 2 {
-			team2ReceivedBlock = team1Submit.Block2
 		} else {
-			return nil, fmt.Errorf("invalid block choice")
+			team2ReceivedBlock = team1Submit.Block2
 		}
 	} else {
-		// 블루이 히든 사용 안함 -> 레드가 블루의 더 큰 블록 받기
 		team2ReceivedBlock = max(team1Submit.Block1, team1Submit.Block2)
 	}
 
@@ -273,6 +305,17 @@ func (g *NCGame) hasBlock(team TeamColor, block int) bool {
 		}
 	}
 	return false
+}
+
+// countBlock 팀이 보유한 해당 숫자 블록 개수
+func (g *NCGame) countBlock(team TeamColor, block int) int {
+	count := 0
+	for _, b := range g.AvailableBlocks[team] {
+		if b == block {
+			count++
+		}
+	}
+	return count
 }
 
 // removeBlocks 블록 제거 (한 번만)

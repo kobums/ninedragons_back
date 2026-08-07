@@ -462,53 +462,51 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 		}
 	}
 
-	// 양 팀이 모두 제출했는지 확인
-	if len(game.RoundSubmits) == 2 {
-		// 어느 한 팀이라도 히든을 사용했는지 확인
-		team1Submit := game.RoundSubmits[Team1]
-		team2Submit := game.RoundSubmits[Team2]
+	// 제출·블록 선택이 모두 끝났으면 라운드 처리
+	// (히든 사용 시 필요한 블록 선택은 제출 페이로드에 포함돼 오거나
+	//  이후 nc_select_block으로 도착한다 — ReadyToProcess가 두 경우 모두 판별)
+	h.tryProcessRound(game)
+}
 
-		anyoneUsedHidden := (team1Submit != nil && team1Submit.UseHidden) || (team2Submit != nil && team2Submit.UseHidden)
-
-		// 누군가 히든을 사용했다면, 상대방의 블록 선택을 기다려야 함
-		if anyoneUsedHidden {
-			log.Printf("[NC] Someone used hidden, waiting for block selection in handleSelectBlock")
-			return
-		}
-
-		// 라운드 처리 (둘 다 히든을 사용하지 않은 경우만)
-		result, err := game.ProcessRound()
-		if err != nil {
-			log.Printf("[NC] Error processing round: %v", err)
-			return
-		}
-
-		// 라운드 결과 전송
-		h.broadcastToGame(game, NCMessage{
-			Type:    NCMsgRoundResult,
-			Payload: result,
-		})
-
-		// 게임 종료 확인
-		isOver, reason := game.IsGameOver()
-		if isOver {
-			winner := game.GetWinner()
-			h.broadcastToGame(game, NCMessage{
-				Type: NCMsgGameOver,
-				Payload: NCGameOverPayload{
-					Winner:     winner,
-					Team1Score: game.Team1Score,
-					Team2Score: game.Team2Score,
-					Reason:     reason,
-				},
-			})
-
-			// 게임 종료 처리
-			h.clearGameSessions(game)
-			delete(h.games, game.ID)
-			h.logMatchResult(game, winner, reason)
-		}
+// tryProcessRound 필요한 제출·블록 선택이 모두 끝났을 때만 라운드를 처리하고 결과를 전송
+func (h *NCHub) tryProcessRound(game *NCGame) {
+	if !game.ReadyToProcess() {
+		return
 	}
+
+	result, err := game.ProcessRound()
+	if err != nil {
+		log.Printf("[NC] Error processing round: %v", err)
+		return
+	}
+
+	// 라운드 결과 전송
+	h.broadcastToGame(game, NCMessage{
+		Type:    NCMsgRoundResult,
+		Payload: result,
+	})
+
+	// 게임 종료 확인
+	isOver, reason := game.IsGameOver()
+	if !isOver {
+		return
+	}
+
+	winner := game.GetWinner()
+	h.broadcastToGame(game, NCMessage{
+		Type: NCMsgGameOver,
+		Payload: NCGameOverPayload{
+			Winner:     winner,
+			Team1Score: game.Team1Score,
+			Team2Score: game.Team2Score,
+			Reason:     reason,
+		},
+	})
+
+	// 게임 종료 처리
+	h.clearGameSessions(game)
+	delete(h.games, game.ID)
+	h.logMatchResult(game, winner, reason)
 }
 
 func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
@@ -527,57 +525,25 @@ func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
 	var payload NCSelectBlockPayload
 	json.Unmarshal(payloadBytes, &payload)
 
+	// 블록 선택 값 검증 (1: 상대 블록1, 2: 상대 블록2)
+	if payload.SelectedBlockChoice != 1 && payload.SelectedBlockChoice != 2 {
+		h.sendToClient(client, NCMessage{
+			Type: NCMsgError,
+			Payload: NCErrorPayload{
+				Message: "잘못된 블록 선택입니다",
+			},
+		})
+		return
+	}
+
 	// 이미 제출한 상태에서 블록 선택 업데이트
 	if submit := game.RoundSubmits[client.Team]; submit != nil {
 		submit.SelectedBlockChoice = payload.SelectedBlockChoice
 		log.Printf("[NC] Team %s updated block choice: %d", client.Team, payload.SelectedBlockChoice)
 
-		// 양 팀이 모두 제출했는지 확인
-		if len(game.RoundSubmits) == 2 {
-			// 상대가 히든을 사용했는지 확인
-			var opponentTeam TeamColor
-			if client.Team == Team1 {
-				opponentTeam = Team2
-			} else {
-				opponentTeam = Team1
-			}
-
-			opponentSubmit := game.RoundSubmits[opponentTeam]
-			if opponentSubmit != nil && opponentSubmit.UseHidden {
-				// 블록 선택이 완료되었으므로 라운드 처리
-				result, err := game.ProcessRound()
-				if err != nil {
-					log.Printf("[NC] Error processing round: %v", err)
-					return
-				}
-
-				// 라운드 결과 전송
-				h.broadcastToGame(game, NCMessage{
-					Type:    NCMsgRoundResult,
-					Payload: result,
-				})
-
-				// 게임 종료 확인
-				isOver, reason := game.IsGameOver()
-				if isOver {
-					winner := game.GetWinner()
-					h.broadcastToGame(game, NCMessage{
-						Type: NCMsgGameOver,
-						Payload: NCGameOverPayload{
-							Winner:     winner,
-							Team1Score: game.Team1Score,
-							Team2Score: game.Team2Score,
-							Reason:     reason,
-						},
-					})
-
-					// 게임 종료 처리
-					h.clearGameSessions(game)
-					delete(h.games, game.ID)
-					h.logMatchResult(game, winner, reason)
-				}
-			}
-		}
+		// 제출·블록 선택이 모두 끝났으면 라운드 처리
+		// (양팀 모두 히든을 쓴 경우 두 번째 선택이 도착할 때까지 기다린다)
+		h.tryProcessRound(game)
 	}
 }
 
