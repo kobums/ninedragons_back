@@ -23,8 +23,8 @@ type STHub struct {
 	// 진행/대기 중인 방 (gameID → room)
 	rooms map[string]*stRoom
 
-	// 상대를 기다리는 방
-	waitingRoom *stRoom
+	// 모드별(기본/전술) 상대를 기다리는 방
+	waitingRooms map[bool]*stRoom
 
 	// 클라이언트 등록
 	register chan *STClient
@@ -62,6 +62,7 @@ func NewSTHub() *STHub {
 		unregister:   make(chan *STClient),
 		clients:      make(map[*STClient]bool),
 		rooms:        make(map[string]*stRoom),
+		waitingRooms: make(map[bool]*stRoom),
 		gameMessage:  make(chan STGameMessage),
 		sessions:     make(map[string]*STClient),
 		graceTimers:  make(map[string]*time.Timer),
@@ -106,10 +107,20 @@ func (h *STHub) handleGameMessage(gm STGameMessage) {
 		h.handleRejoin(gm.Client, gm.Message)
 	case STMsgPlayCard:
 		h.handlePlayCard(gm.Client, gm.Message)
+	case STMsgPlayRuse:
+		h.handlePlayRuse(gm.Client, gm.Message)
 	case STMsgClaimStone:
 		h.handleClaimStone(gm.Client, gm.Message)
 	case STMsgEndTurn:
 		h.handleEndTurn(gm.Client)
+	case STMsgDraw:
+		h.handleDraw(gm.Client, gm.Message)
+	case STMsgPass:
+		h.handlePass(gm.Client)
+	case STMsgRecruiterDraw:
+		h.handleRecruiterDraw(gm.Client, gm.Message)
+	case STMsgRecruiterReturn:
+		h.handleRecruiterReturn(gm.Client, gm.Message)
 	}
 }
 
@@ -130,16 +141,18 @@ func (h *STHub) handleJoinGame(client *STClient, msg STMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	tacticMode := payload.Mode == "tactic"
+
 	var room *stRoom
-	if h.waitingRoom == nil {
-		game := NewSTGame(uuid.New().String())
+	if h.waitingRooms[tacticMode] == nil {
+		game := NewSTGame(uuid.New().String(), tacticMode)
 		room = &stRoom{Game: game, Clients: map[STSide]*STClient{}}
-		h.waitingRoom = room
+		h.waitingRooms[tacticMode] = room
 		h.rooms[game.ID] = room
-		log.Printf("[ST] Created new game %s", game.ID)
+		log.Printf("[ST] Created new game %s (tactic=%v)", game.ID, tacticMode)
 	} else {
-		room = h.waitingRoom
-		h.waitingRoom = nil
+		room = h.waitingRooms[tacticMode]
+		delete(h.waitingRooms, tacticMode)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -285,6 +298,105 @@ func (h *STHub) handleEndTurn(client *STClient) {
 	h.finishIfOver(room)
 }
 
+func (h *STHub) handlePlayRuse(client *STClient, msg STMessage) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload STPlayRusePayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	// 이벤트에 실을 카드를 미리 읽어둔다
+	var played *STCard
+	if hand := room.Game.Hands[client.Side]; payload.HandIndex >= 0 && payload.HandIndex < len(hand) {
+		card := hand[payload.HandIndex]
+		played = &card
+	}
+
+	if err := room.Game.PlayRuse(client.Side, payload); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+
+	h.broadcastEvent(room, STEventPayload{
+		Kind: "ruse_played",
+		Side: client.Side,
+		Card: played,
+	})
+	h.broadcastState(room)
+	h.finishIfOver(room)
+}
+
+func (h *STHub) handleDraw(client *STClient, msg STMessage) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload STDrawPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if err := room.Game.DrawFrom(client.Side, payload.Deck); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	h.broadcastState(room)
+	h.finishIfOver(room)
+}
+
+func (h *STHub) handlePass(client *STClient) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	if err := room.Game.Pass(client.Side); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	h.broadcastEvent(room, STEventPayload{Kind: "turn_passed", Side: client.Side})
+	h.broadcastState(room)
+	h.finishIfOver(room)
+}
+
+func (h *STHub) handleRecruiterDraw(client *STClient, msg STMessage) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload STRecruiterDrawPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if err := room.Game.RecruiterDraw(client.Side, payload.Deck); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	h.broadcastState(room)
+}
+
+func (h *STHub) handleRecruiterReturn(client *STClient, msg STMessage) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload STRecruiterReturnPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if err := room.Game.RecruiterReturn(client.Side, payload.HandIndex); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	h.broadcastState(room)
+	h.finishIfOver(room)
+}
+
 // ==================== 상태 뷰 ====================
 
 // buildSTState 개인화 게임 스냅샷. 재접속 복원과 일반 갱신이 같은 경로를 쓴다.
@@ -319,15 +431,24 @@ func (h *STHub) buildSTState(room *stRoom, viewerSide STSide) STGameStatePayload
 			OppCards:  append([]STCard{}, stone.Cards[opp]...),
 			Owner:     owner,
 			Claimable: claimable[i],
+			Blind:     stone.Blind,
+			Mud:       stone.Mud,
+			Required:  stone.Required(),
 		}
 	}
+
+	canPass := game.TacticMode && game.Phase == STPhasePlay &&
+		game.CurrentSide == viewerSide && !game.clanPlayable(viewerSide)
 
 	return STGameStatePayload{
 		GameID:            game.ID,
 		YourSide:          viewerSide,
+		TacticMode:        game.TacticMode,
 		Phase:             game.Phase,
 		CurrentSide:       game.CurrentSide,
 		DeckCount:         len(game.Deck),
+		TacticDeckCount:   len(game.TacticDeck),
+		Discard:           append([]STCard{}, game.Discard...),
 		YourHand:          append([]STCard{}, game.Hands[viewerSide]...),
 		OpponentHandCount: len(game.Hands[opp]),
 		Stones:            stones,
@@ -335,6 +456,11 @@ func (h *STHub) buildSTState(room *stRoom, viewerSide STSide) STGameStatePayload
 		NorthName:         game.Names[STNorth],
 		YourStoneCount:    game.stoneCount(viewerSide),
 		OppStoneCount:     game.stoneCount(opp),
+		YourPlayedTactics: game.PlayedTactics[viewerSide],
+		OppPlayedTactics:  game.PlayedTactics[opp],
+		CanPass:           canPass,
+		RecruiterDraws:    game.RecruiterDraws,
+		RecruiterReturns:  game.RecruiterReturns,
 		OpponentConnected: opponentConnected,
 	}
 }
@@ -410,9 +536,7 @@ func (h *STHub) handleDisconnect(client *STClient) {
 	// 상대를 기다리던 방은 유지할 이유가 없으니 즉시 정리
 	if !room.Game.Ready {
 		delete(h.rooms, room.Game.ID)
-		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
-			h.waitingRoom = nil
-		}
+		h.clearWaiting(room)
 		delete(h.sessions, client.SessionID)
 		return
 	}
@@ -470,8 +594,15 @@ func (h *STHub) handleGraceExpired(sessionID string) {
 	}
 
 	delete(h.rooms, room.Game.ID)
-	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
-		h.waitingRoom = nil
+	h.clearWaiting(room)
+}
+
+// clearWaiting 대기 큐에서 해당 방을 제거한다
+func (h *STHub) clearWaiting(room *stRoom) {
+	for mode, waiting := range h.waitingRooms {
+		if waiting != nil && waiting.Game.ID == room.Game.ID {
+			delete(h.waitingRooms, mode)
+		}
 	}
 }
 
