@@ -1,0 +1,245 @@
+package server
+
+import (
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+// ==================== DaVinci Code Game Types ====================
+
+// DVTileColor 타일 색
+type DVTileColor string
+
+const (
+	DVBlack DVTileColor = "black"
+	DVWhite DVTileColor = "white"
+)
+
+// DVJokerValue 조커 타일의 값. 정렬 비교에서 제외되며 추리 시에도 이 값으로 선언한다.
+const DVJokerValue = -1
+
+// DVMaxPlayers 최대 인원
+const DVMaxPlayers = 4
+
+// DVPhase 게임 진행 단계. 서버가 지금 어떤 입력을 기다리는지 명시한다.
+type DVPhase string
+
+const (
+	DVPhaseLobby           DVPhase = "lobby"
+	DVPhaseJokerSetup      DVPhase = "joker_setup"       // 초기 배분 조커의 위치 선택 대기
+	DVPhaseDraw            DVPhase = "draw"              // 현재 턴 플레이어의 뽑기 대기
+	DVPhaseGuess           DVPhase = "guess"             // 추리 대기
+	DVPhaseContinueChoice  DVPhase = "continue_choice"   // 추리 성공 후 계속/중단 선택 대기
+	DVPhasePlaceDrawnJoker DVPhase = "place_drawn_joker" // 뽑은 조커의 삽입 위치 선택 대기
+	DVPhaseRevealOwn       DVPhase = "reveal_own"        // 더미 소진 상태에서 추리 실패 → 공개할 자기 타일 선택 대기
+	DVPhaseGameOver        DVPhase = "game_over"
+)
+
+// DVMessageType 다빈치코드 메시지 타입
+type DVMessageType string
+
+const (
+	// 클라이언트 → 서버
+	DVMsgJoinLobby      DVMessageType = "dv_join_lobby"
+	DVMsgLeaveLobby     DVMessageType = "dv_leave_lobby"
+	DVMsgStartGame      DVMessageType = "dv_start_game"
+	DVMsgRejoinGame     DVMessageType = "dv_rejoin_game"
+	DVMsgPlaceJoker     DVMessageType = "dv_place_joker"
+	DVMsgDrawTile       DVMessageType = "dv_draw_tile"
+	DVMsgGuess          DVMessageType = "dv_guess"
+	DVMsgContinueChoice DVMessageType = "dv_continue_choice"
+	DVMsgRevealOwn      DVMessageType = "dv_reveal_own"
+
+	// 서버 → 클라이언트
+	DVMsgLobbyState          DVMessageType = "dv_lobby_state"
+	DVMsgGameState           DVMessageType = "dv_game_state"
+	DVMsgEvent               DVMessageType = "dv_event"
+	DVMsgGameOver            DVMessageType = "dv_game_over"
+	DVMsgPlayerDisconnected  DVMessageType = "dv_player_disconnected"
+	DVMsgPlayerReconnected   DVMessageType = "dv_player_reconnected"
+	DVMsgSessionExpired      DVMessageType = "dv_session_expired"
+	DVMsgError               DVMessageType = "dv_error"
+)
+
+// DVTile 타일 하나. Value 는 0~11, 조커는 DVJokerValue(-1)에 Joker=true.
+type DVTile struct {
+	ID       int
+	Color    DVTileColor
+	Value    int
+	Joker    bool
+	Revealed bool
+}
+
+// DVPlayer 게임 참가자. 클라이언트 연결을 참조하지 않는 순수 상태다 —
+// 좌석(Seat)↔연결 매핑은 허브의 dvRoom 이 담당한다.
+type DVPlayer struct {
+	Seat       int
+	Name       string
+	Tiles      []DVTile // 슬라이스 순서 = 왼쪽→오른쪽 배치 순서
+	Eliminated bool
+}
+
+// DVGame 다빈치코드 게임 상태 (순수, 허브 비의존)
+type DVGame struct {
+	ID          string
+	Players     []*DVPlayer
+	Deck        []DVTile
+	Phase       DVPhase
+	CurrentSeat int
+	// DrawnTile 이번 턴에 뽑아 아직 줄에 넣지 않은 타일
+	DrawnTile *DVTile
+	// DrawnJokerRevealed place_drawn_joker 단계에서 공개 삽입(추리 실패)인지
+	// 비공개 삽입(중단)인지 구분
+	DrawnJokerRevealed bool
+	// PendingJokerTiles joker_setup 단계에서 좌석별 배치 대기 조커.
+	// 줄(Tiles)에 임시로 섞어두면 배치 후 위치 이동이 상대에게 보여
+	// 조커 위치가 새므로, 배치 전에는 줄 밖에 따로 보관한다.
+	PendingJokerTiles map[int][]DVTile
+	WinnerSeat        int // -1 = 미정
+	Ready             bool
+	StartedAt         time.Time
+}
+
+// DVClient 다빈치코드 클라이언트 연결
+type DVClient struct {
+	ID        string
+	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
+	Name      string
+	Conn      *websocket.Conn
+	Hub       *DVHub
+	Send      chan []byte
+	GameID    string
+	Seat      int
+	Connected bool // DVHub 고루틴에서만 접근
+}
+
+// DVMessage 메시지 봉투
+type DVMessage struct {
+	Type    DVMessageType `json:"type"`
+	Payload interface{}   `json:"payload,omitempty"`
+}
+
+// ==================== 클라이언트 → 서버 payload ====================
+
+type DVJoinLobbyPayload struct {
+	PlayerName string `json:"playerName"`
+}
+
+type DVRejoinGamePayload struct {
+	SessionID string `json:"sessionId"`
+}
+
+// DVPlaceJokerPayload 조커 배치. Position 은 삽입 인덱스(0 = 맨 왼쪽).
+type DVPlaceJokerPayload struct {
+	TileID   int `json:"tileId"`
+	Position int `json:"position"`
+}
+
+// DVGuessPayload 추리. Value 는 0~11 또는 조커 추리 시 DVJokerValue(-1).
+type DVGuessPayload struct {
+	TargetSeat int `json:"targetSeat"`
+	TileIndex  int `json:"tileIndex"`
+	Value      int `json:"value"`
+}
+
+type DVContinueChoicePayload struct {
+	Continue bool `json:"continue"`
+}
+
+type DVRevealOwnPayload struct {
+	TileIndex int `json:"tileIndex"`
+}
+
+// ==================== 서버 → 클라이언트 payload ====================
+
+// DVLobbyPlayer 로비 인원 목록 항목
+type DVLobbyPlayer struct {
+	Seat      int    `json:"seat"`
+	Name      string `json:"name"`
+	Connected bool   `json:"connected"`
+}
+
+// DVLobbyStatePayload 로비 상태. 입장/퇴장/호스트 변경 시마다 전원에게 재전송.
+type DVLobbyStatePayload struct {
+	GameID    string          `json:"gameId"`
+	YourSeat  int             `json:"yourSeat"`
+	SessionID string          `json:"sessionId"`
+	HostSeat  int             `json:"hostSeat"`
+	Players   []DVLobbyPlayer `json:"players"`
+	CanStart  bool            `json:"canStart"`
+}
+
+// DVTileView 수신자 관점에서 마스킹된 타일. 남의 비공개 타일은
+// Value/Joker 필드가 생략된다(HasValue=false 로 직렬화 제어).
+type DVTileView struct {
+	ID       int         `json:"id"`
+	Color    DVTileColor `json:"color"`
+	Value    *int        `json:"value,omitempty"`
+	Joker    *bool       `json:"joker,omitempty"`
+	Revealed bool        `json:"revealed"`
+}
+
+// DVPlayerView 수신자 관점의 플레이어 상태
+type DVPlayerView struct {
+	Seat       int          `json:"seat"`
+	Name       string       `json:"name"`
+	Connected  bool         `json:"connected"`
+	Eliminated bool         `json:"eliminated"`
+	Tiles      []DVTileView `json:"tiles"`
+}
+
+// DVGameStatePayload 개인화된 전체 게임 스냅샷. 모든 상태 변경 후
+// 좌석마다 따로 만들어 보낸다. 재접속 복원도 같은 페이로드를 쓴다.
+type DVGameStatePayload struct {
+	GameID            string         `json:"gameId"`
+	YourSeat          int            `json:"yourSeat"`
+	Phase             DVPhase        `json:"phase"`
+	CurrentSeat       int            `json:"currentSeat"`
+	DeckCount         int            `json:"deckCount"`
+	PlayerCount       int            `json:"playerCount"`
+	PendingJokerSeats []int          `json:"pendingJokerSeats,omitempty"`
+	// YourPendingJokers 내가 아직 배치하지 않은 초기 조커 (본인에게만 값 포함)
+	YourPendingJokers []DVTileView   `json:"yourPendingJokers,omitempty"`
+	DrawnTile         *DVTileView    `json:"drawnTile,omitempty"`
+	Players           []DVPlayerView `json:"players"`
+}
+
+// DVEventPayload 연출용 이벤트. 비밀 정보를 담지 않으며 전원에게 동일하게 간다.
+type DVEventPayload struct {
+	Kind string `json:"kind"`
+	// guess_made
+	GuesserSeat  int  `json:"guesserSeat,omitempty"`
+	TargetSeat   int  `json:"targetSeat,omitempty"`
+	TileIndex    int  `json:"tileIndex,omitempty"`
+	GuessedValue *int `json:"guessedValue,omitempty"`
+	Correct      *bool `json:"correct,omitempty"`
+	// game_started / tile_drawn / joker_placed / turn_stopped /
+	// tile_revealed / player_eliminated / player_forfeited
+	Seat  *int         `json:"seat,omitempty"`
+	Color DVTileColor  `json:"color,omitempty"`
+	Value *int         `json:"value,omitempty"`
+}
+
+// DVGameOverPayload 게임 종료. 전 플레이어의 타일을 전부 공개해 보낸다.
+type DVGameOverPayload struct {
+	WinnerSeat int            `json:"winnerSeat"`
+	WinnerName string         `json:"winnerName"`
+	Reason     string         `json:"reason"` // "last_standing" | "forfeit_win"
+	Players    []DVPlayerView `json:"players"`
+}
+
+type DVPlayerDisconnectedPayload struct {
+	Seat         int    `json:"seat"`
+	Name         string `json:"name"`
+	GraceSeconds int    `json:"graceSeconds"`
+}
+
+type DVPlayerReconnectedPayload struct {
+	Seat int    `json:"seat"`
+	Name string `json:"name"`
+}
+
+type DVErrorPayload struct {
+	Message string `json:"message"`
+}
