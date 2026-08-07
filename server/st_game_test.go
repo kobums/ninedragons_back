@@ -26,7 +26,7 @@ func TestSTEvaluateCategories(t *testing.T) {
 		{"합계", []STCard{card(0, 1), card(1, 5), card(2, 9)}, stFormationSum, 15},
 	}
 	for _, tc := range cases {
-		got := stEvaluate(tc.cards)
+		got := stBestFormation(tc.cards, false)
 		if got.Category != tc.category || got.Sum != tc.sum {
 			t.Errorf("%s: got (category=%d, sum=%d), want (%d, %d)",
 				tc.name, got.Category, got.Sum, tc.category, tc.sum)
@@ -58,7 +58,7 @@ func TestSTFormationBeats(t *testing.T) {
 
 func newTestGame(t *testing.T) *STGame {
 	t.Helper()
-	g := NewSTGame("test")
+	g := NewSTGame("test", false)
 	if _, err := g.AddPlayer("남유저"); err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestSTStalemate(t *testing.T) {
 func TestSTRandomGamesComplete(t *testing.T) {
 	for seed := int64(0); seed < 20; seed++ {
 		rng := rand.New(rand.NewSource(seed))
-		g := NewSTGame("sim")
+		g := NewSTGame("sim", false)
 		g.AddPlayer("A")
 		g.AddPlayer("B")
 		if err := g.Start(rng); err != nil {
