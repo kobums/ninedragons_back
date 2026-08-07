@@ -132,10 +132,54 @@ func startDVThreePlayers(t *testing.T, url string) ([]*dvTestClient, []string, [
 		}
 	}
 
+	// 조커를 집었으면 배치까지 끝낸다. 조커 단계는 남에게 위장되므로
+	// "내 몫 완료"를 기준으로 기다리고, 보유자만 joker_setup 을 기다려 배치한다.
+	// 조건 대기 중 소비한 스냅샷이 이미 draw 일 수 있으므로 (마지막
+	// 브로드캐스트를 먹어버리면 이후 대기가 굶는다) 상태를 보관해 둔다.
+	lastStates := make([]map[string]interface{}, 3)
+	for i, c := range clients {
+		state := c.waitForState(t, func(state map[string]interface{}) bool {
+			phase := state["phase"]
+			if phase == string(DVPhaseDraw) || phase == string(DVPhaseJokerSetup) {
+				return true
+			}
+			yourSeat := int(state["yourSeat"].(float64))
+			for _, playerRaw := range state["players"].([]interface{}) {
+				pm := playerRaw.(map[string]interface{})
+				if int(pm["seat"].(float64)) == yourSeat {
+					_, has := pm["initialRemaining"]
+					return !has
+				}
+			}
+			return false
+		})
+		pending, _ := state["yourPendingJokers"].([]interface{})
+		if len(pending) == 0 {
+			lastStates[i] = state
+			continue
+		}
+		// 배치는 전원 픽 완료(joker_setup) 후에만 유효하다
+		if state["phase"] != string(DVPhaseJokerSetup) {
+			state = c.waitForState(t, func(s map[string]interface{}) bool {
+				return s["phase"] == string(DVPhaseJokerSetup)
+			})
+			pending, _ = state["yourPendingJokers"].([]interface{})
+		}
+		for _, jokerRaw := range pending {
+			id := int(jokerRaw.(map[string]interface{})["id"].(float64))
+			c.send(t, DVMessage{Type: DVMsgPlaceJoker, Payload: DVPlaceJokerPayload{TileID: id, Position: 0}})
+		}
+		// 배치가 새 브로드캐스트를 만들므로 이후 draw 를 소켓에서 받는다
+	}
+
 	states := make([]map[string]interface{}, 3)
 	for i, c := range clients {
+		if lastStates[i] != nil && lastStates[i]["phase"] == string(DVPhaseDraw) {
+			states[i] = lastStates[i]
+			continue
+		}
 		states[i] = c.waitForState(t, func(state map[string]interface{}) bool {
-			return state["phase"] != string(DVPhaseInitialDraw)
+			return state["phase"] == string(DVPhaseDraw)
 		})
 	}
 	return clients, sessions, states

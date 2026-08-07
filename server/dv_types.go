@@ -189,10 +189,10 @@ type DVLobbyStatePayload struct {
 }
 
 // DVTileView 수신자 관점에서 마스킹된 타일. 남의 비공개 타일은
-// Value/Joker 필드가 생략된다(HasValue=false 로 직렬화 제어).
+// Value/Joker 필드가 생략되고, 셋업 중에는 Color 까지 생략된다.
 type DVTileView struct {
 	ID       int         `json:"id"`
-	Color    DVTileColor `json:"color"`
+	Color    DVTileColor `json:"color,omitempty"`
 	Value    *int        `json:"value,omitempty"`
 	Joker    *bool       `json:"joker,omitempty"`
 	Revealed bool        `json:"revealed"`
@@ -220,7 +220,6 @@ type DVGameStatePayload struct {
 	DeckBlackCount    int            `json:"deckBlackCount"`
 	DeckWhiteCount    int            `json:"deckWhiteCount"`
 	PlayerCount       int            `json:"playerCount"`
-	PendingJokerSeats []int          `json:"pendingJokerSeats,omitempty"`
 	// YourPendingJokers 내가 아직 배치하지 않은 초기 조커 (본인에게만 값 포함)
 	YourPendingJokers []DVTileView   `json:"yourPendingJokers,omitempty"`
 	DrawnTile         *DVTileView    `json:"drawnTile,omitempty"`

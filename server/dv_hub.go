@@ -320,8 +320,7 @@ func (h *DVHub) handlePlaceJoker(client *DVClient, msg DVMessage) {
 		h.sendError(client, err.Error())
 		return
 	}
-	seat := client.Seat
-	h.broadcastEvent(room, DVEventPayload{Kind: "joker_placed", Seat: &seat})
+	// 조커 보유는 비밀 정보이므로 배치 이벤트를 알리지 않는다
 	h.broadcastState(room)
 	h.finishIfOver(room, "last_standing")
 }
@@ -470,24 +469,40 @@ func dvIntPtr(v int) *int    { return &v }
 func dvBoolPtr(v bool) *bool { return &v }
 
 // maskDVTile 수신자 관점의 타일 뷰. 공개됐거나 내 것이거나 전체 공개
-// 모드가 아니면 값을 감춘다.
-func maskDVTile(tile DVTile, ownerSeat, viewerSeat int, revealAll bool) DVTileView {
-	view := DVTileView{ID: tile.ID, Color: tile.Color, Revealed: tile.Revealed}
+// 모드가 아니면 값을 감춘다. 남의 비공개 타일은 실제 타일 ID 대신
+// 위치 기반 가짜 ID 를 줘서 클라이언트가 특정 타일(조커 등)을 상태
+// 스냅샷 사이에서 추적하지 못하게 한다.
+func maskDVTile(tile DVTile, ownerSeat, viewerSeat, index int, revealAll bool) DVTileView {
 	if tile.Revealed || ownerSeat == viewerSeat || revealAll {
-		view.Value = dvIntPtr(tile.Value)
-		view.Joker = dvBoolPtr(tile.Joker)
+		return DVTileView{
+			ID:       tile.ID,
+			Color:    tile.Color,
+			Revealed: tile.Revealed,
+			Value:    dvIntPtr(tile.Value),
+			Joker:    dvBoolPtr(tile.Joker),
+		}
 	}
-	return view
+	return DVTileView{ID: ownerSeat*100 + index, Color: tile.Color, Revealed: false}
 }
 
-// buildDVPlayers 좌석별 플레이어 뷰 목록
+// buildDVPlayers 좌석별 플레이어 뷰 목록. 셋업(시작 타일·조커 배치) 중에는
+// 남의 줄 배치를 아예 감춘다 — 배치 과정을 지켜보면 어느 타일이 조커인지
+// 위치까지 새기 때문이다. 원작처럼 셋업이 끝나야 상대 줄이 보인다.
 func (h *DVHub) buildDVPlayers(room *dvRoom, viewerSeat int, revealAll bool) []DVPlayerView {
+	game := room.Game
+	setup := game.Phase == DVPhaseInitialDraw || game.Phase == DVPhaseJokerSetup
+
 	views := []DVPlayerView{}
-	for _, p := range room.Game.Players {
+	for _, p := range game.Players {
 		c := room.Clients[p.Seat]
 		tiles := []DVTileView{}
-		for _, tile := range p.Tiles {
-			tiles = append(tiles, maskDVTile(tile, p.Seat, viewerSeat, revealAll))
+		for idx, tile := range p.Tiles {
+			if setup && p.Seat != viewerSeat && !revealAll {
+				// 색도 감춘 중립 뒷면 (개수만 보인다)
+				tiles = append(tiles, DVTileView{ID: p.Seat*100 + idx, Revealed: false})
+				continue
+			}
+			tiles = append(tiles, maskDVTile(tile, p.Seat, viewerSeat, idx, revealAll))
 		}
 		views = append(views, DVPlayerView{
 			Seat:             p.Seat,
@@ -501,40 +516,58 @@ func (h *DVHub) buildDVPlayers(room *dvRoom, viewerSeat int, revealAll bool) []D
 	return views
 }
 
+// maskDVPhase 수신자 관점의 단계. 조커 관련 단계는 조커 보유가 새는
+// 정보이므로 당사자가 아니면 직전 단계로 위장한다.
+func maskDVPhase(game *DVGame, viewerSeat int) DVPhase {
+	switch game.Phase {
+	case DVPhaseJokerSetup:
+		// 조커를 배치할 사람만 실제 단계를 본다. 나머지에게는 아직
+		// 시작 타일 단계인 것처럼 보인다 (본인 몫은 이미 0이라 대기 문구).
+		if len(game.PendingJokerTiles[viewerSeat]) == 0 {
+			return DVPhaseInitialDraw
+		}
+	case DVPhasePlaceDrawnJoker:
+		// 뽑은 타일이 조커라는 사실 자체가 비밀이다. 남에게는 직전
+		// 단계(추리 중 / 계속 여부 고민 중)가 이어지는 것처럼 보인다.
+		if viewerSeat != game.CurrentSeat {
+			if game.DrawnJokerRevealed {
+				return DVPhaseGuess
+			}
+			return DVPhaseContinueChoice
+		}
+	}
+	return game.Phase
+}
+
 // buildDVState 개인화 게임 스냅샷. 재접속 복원과 일반 갱신이 같은 경로를 쓴다.
 func (h *DVHub) buildDVState(room *dvRoom, viewerSeat int) DVGameStatePayload {
 	game := room.Game
 
-	pendingSeats := []int{}
-	for seat := range game.PendingJokerTiles {
-		pendingSeats = append(pendingSeats, seat)
-	}
-	sort.Ints(pendingSeats)
-
 	var yourPending []DVTileView
-	for _, tile := range game.PendingJokerTiles[viewerSeat] {
-		yourPending = append(yourPending, maskDVTile(tile, viewerSeat, viewerSeat, false))
+	for idx, tile := range game.PendingJokerTiles[viewerSeat] {
+		yourPending = append(yourPending, maskDVTile(tile, viewerSeat, viewerSeat, idx, false))
 	}
 
 	var drawn *DVTileView
 	if game.DrawnTile != nil {
-		// 실패로 공개가 확정된 조커는 전원에게 값이 보인다.
-		visible := viewerSeat == game.CurrentSeat || game.DrawnJokerRevealed
-		view := maskDVTile(*game.DrawnTile, game.CurrentSeat, viewerSeat, visible)
-		view.Revealed = game.DrawnJokerRevealed
+		// 값(조커 여부 포함)은 뽑은 본인에게만 보인다. 실패로 공개될
+		// 조커도 줄에 놓이기 전까지는 남에게 알리지 않는다.
+		view := maskDVTile(*game.DrawnTile, game.CurrentSeat, viewerSeat, 0, false)
+		if viewerSeat == game.CurrentSeat {
+			view.Revealed = game.DrawnJokerRevealed
+		}
 		drawn = &view
 	}
 
 	return DVGameStatePayload{
 		GameID:            game.ID,
 		YourSeat:          viewerSeat,
-		Phase:             game.Phase,
+		Phase:             maskDVPhase(game, viewerSeat),
 		CurrentSeat:       game.CurrentSeat,
 		DeckCount:         len(game.Deck),
 		DeckBlackCount:    game.DeckCountByColor(DVBlack),
 		DeckWhiteCount:    game.DeckCountByColor(DVWhite),
 		PlayerCount:       len(game.Players),
-		PendingJokerSeats: pendingSeats,
 		YourPendingJokers: yourPending,
 		DrawnTile:         drawn,
 		Players:           h.buildDVPlayers(room, viewerSeat, false),
