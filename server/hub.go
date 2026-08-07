@@ -300,6 +300,12 @@ func (h *Hub) clearGameSessions(game *Game) {
 }
 
 func (h *Hub) handleJoinGame(client *Client, msg Message) {
+	// 버튼 연타 등으로 같은 연결이 두 번 입장하는 것을 막는다
+	// (막지 않으면 자기 자신과 매칭되거나 유령 자리가 생긴다)
+	if client.SessionID != "" {
+		return
+	}
+
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload JoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)

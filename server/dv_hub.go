@@ -126,6 +126,12 @@ func (h *DVHub) handleGameMessage(gm DVGameMessage) {
 // ==================== 로비 ====================
 
 func (h *DVHub) handleJoinLobby(client *DVClient, msg DVMessage) {
+	// 버튼 연타 등으로 같은 연결이 두 번 입장하면 유령 좌석이 생기므로
+	// 이미 세션이 있는 연결의 재입장은 무시한다
+	if client.SessionID != "" {
+		return
+	}
+
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload DVJoinLobbyPayload
 	json.Unmarshal(payloadBytes, &payload)

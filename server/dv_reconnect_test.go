@@ -271,6 +271,29 @@ func TestDVGraceExpiryForfeitsAndGameContinues(t *testing.T) {
 	}
 }
 
+// TestDVDoubleJoinIgnored 입장 버튼 연타로 같은 연결이 join 을 두 번 보내도
+// 좌석은 하나만 생긴다
+func TestDVDoubleJoinIgnored(t *testing.T) {
+	_, url, cleanup := newDVTestServer(t, defaultDisconnectGrace)
+	defer cleanup()
+
+	c1 := dvDial(t, url)
+	defer c1.conn.Close()
+	c1.send(t, DVMessage{Type: DVMsgJoinLobby, Payload: DVJoinLobbyPayload{PlayerName: "연타"}})
+	c1.send(t, DVMessage{Type: DVMsgJoinLobby, Payload: DVJoinLobbyPayload{PlayerName: "연타"}})
+	c1.waitFor(t, DVMsgLobbyState)
+
+	// 두 번째 클라이언트가 본 로비에는 연타 1명 + 자신 = 2명이어야 한다
+	c2 := dvDial(t, url)
+	defer c2.conn.Close()
+	c2.send(t, DVMessage{Type: DVMsgJoinLobby, Payload: DVJoinLobbyPayload{PlayerName: "정상"}})
+	state := dvPayloadMap(t, c2.waitFor(t, DVMsgLobbyState))
+	players := state["players"].([]interface{})
+	if len(players) != 2 {
+		t.Fatalf("로비 인원 %d명, want 2 (연타 입장은 한 번만 반영)", len(players))
+	}
+}
+
 // TestDVLobbyLeaveReassignsSeats 로비 이탈 시 좌석이 당겨지고 호스트가 승계되는지
 func TestDVLobbyLeaveReassignsSeats(t *testing.T) {
 	_, url, cleanup := newDVTestServer(t, defaultDisconnectGrace)
