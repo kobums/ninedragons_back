@@ -203,13 +203,54 @@ func TestDVJokerSetupFlow(t *testing.T) {
 	}
 }
 
+func TestDVDrawTileColorChoice(t *testing.T) {
+	g := newTestDVGame(t, [][]DVTile{
+		{dvTile(2, DVBlack, 2)},
+		{dvTile(5, DVBlack, 5)},
+	}, []DVTile{dvTile(7, DVBlack, 7), dvTile(16, DVWhite, 4), dvTile(3, DVBlack, 3)}, 0)
+
+	if g.DeckCountByColor(DVBlack) != 2 || g.DeckCountByColor(DVWhite) != 1 {
+		t.Fatalf("색별 더미 수가 틀렸다: 검%d 백%d", g.DeckCountByColor(DVBlack), g.DeckCountByColor(DVWhite))
+	}
+
+	// 흰색을 고르면 흰 타일이 나온다
+	tile, err := g.DrawTile(0, DVWhite)
+	if err != nil {
+		t.Fatalf("DrawTile: %v", err)
+	}
+	if tile.Color != DVWhite || tile.ID != 16 {
+		t.Fatalf("흰색을 골랐는데 %+v", tile)
+	}
+	if g.DeckCountByColor(DVWhite) != 0 || len(g.Deck) != 2 {
+		t.Fatalf("더미에서 빠지지 않았다: %+v", g.Deck)
+	}
+
+	// 다음 턴: 남은 흰색이 없으면 흰색 선택은 거부
+	g.Guess(0, 1, 0, 0) // 오답으로 턴 종료
+	if _, err := g.DrawTile(1, DVWhite); err == nil {
+		t.Fatal("흰 타일이 없는데 흰색 선택이 허용됐다")
+	}
+	if _, err := g.DrawTile(1, DVBlack); err != nil {
+		t.Fatalf("검은색 선택이 거부됐다: %v", err)
+	}
+
+	// 색이 아닌 값은 거부
+	g2 := newTestDVGame(t, [][]DVTile{
+		{dvTile(2, DVBlack, 2)},
+		{dvTile(5, DVBlack, 5)},
+	}, []DVTile{dvTile(7, DVBlack, 7)}, 0)
+	if _, err := g2.DrawTile(0, DVTileColor("red")); err == nil {
+		t.Fatal("잘못된 색이 허용됐다")
+	}
+}
+
 func TestDVGuessCorrectThenContinueChoice(t *testing.T) {
 	g := newTestDVGame(t, [][]DVTile{
 		{dvTile(2, DVBlack, 2), dvTile(20, DVWhite, 8)},
 		{dvTile(5, DVBlack, 5), dvTile(21, DVWhite, 9)},
 	}, []DVTile{dvTile(7, DVBlack, 7), dvTile(3, DVBlack, 3)}, 0)
 
-	if _, err := g.DrawTile(0); err != nil {
+	if _, err := g.DrawTile(0, DVBlack); err != nil {
 		t.Fatalf("DrawTile: %v", err)
 	}
 	if g.Phase != DVPhaseGuess {
@@ -252,7 +293,7 @@ func TestDVContinueStopInsertsDrawnHidden(t *testing.T) {
 		{dvTile(5, DVBlack, 5), dvTile(21, DVWhite, 9)},
 	}, []DVTile{dvTile(7, DVBlack, 7)}, 0)
 
-	g.DrawTile(0)
+	g.DrawTile(0, DVBlack)
 	result, err := g.Guess(0, 1, 0, 5)
 	if err != nil || !result.Correct {
 		t.Fatalf("Guess: %v correct=%v", err, result.Correct)
@@ -280,7 +321,7 @@ func TestDVGuessWrongRevealsDrawnTile(t *testing.T) {
 		{dvTile(5, DVBlack, 5), dvTile(21, DVWhite, 9)},
 	}, []DVTile{dvTile(7, DVBlack, 7), dvTile(3, DVBlack, 3)}, 0)
 
-	g.DrawTile(0) // 3검
+	g.DrawTile(0, DVBlack) // 3검
 	result, err := g.Guess(0, 1, 0, 4)
 	if err != nil {
 		t.Fatalf("Guess: %v", err)
@@ -304,7 +345,7 @@ func TestDVGuessJoker(t *testing.T) {
 		{dvJoker(24, DVBlack), dvTile(5, DVBlack, 5)},
 	}, []DVTile{dvTile(7, DVBlack, 7)}, 0)
 
-	g.DrawTile(0)
+	g.DrawTile(0, DVBlack)
 	// 조커를 5로 추리 → 실패
 	result, err := g.Guess(0, 1, 0, 5)
 	if err != nil {
@@ -319,7 +360,7 @@ func TestDVGuessJoker(t *testing.T) {
 		{dvTile(2, DVBlack, 2)},
 		{dvJoker(24, DVBlack), dvTile(5, DVBlack, 5)},
 	}, []DVTile{dvTile(7, DVBlack, 7)}, 0)
-	g2.DrawTile(0)
+	g2.DrawTile(0, DVBlack)
 	result, err = g2.Guess(0, 1, 0, DVJokerValue)
 	if err != nil {
 		t.Fatalf("Guess: %v", err)
@@ -336,7 +377,7 @@ func TestDVDrawnJokerPlacement(t *testing.T) {
 		{dvTile(5, DVBlack, 5), dvTile(21, DVWhite, 9)},
 	}, []DVTile{dvJoker(25, DVWhite)}, 0)
 
-	g.DrawTile(0)
+	g.DrawTile(0, DVWhite)
 	if _, err := g.Guess(0, 1, 0, 3); err != nil { // 오답
 		t.Fatalf("Guess: %v", err)
 	}
@@ -365,7 +406,7 @@ func TestDVEmptyDeckTurn(t *testing.T) {
 	if g.Phase != DVPhaseGuess {
 		t.Fatalf("phase = %s, want guess", g.Phase)
 	}
-	if _, err := g.DrawTile(0); err == nil {
+	if _, err := g.DrawTile(0, DVBlack); err == nil {
 		t.Fatal("빈 더미에서 뽑기는 거부돼야 한다")
 	}
 
@@ -443,7 +484,7 @@ func TestDVForfeitDuringOwnTurn(t *testing.T) {
 		{dvTile(9, DVBlack, 9)},
 	}, []DVTile{dvTile(7, DVBlack, 7)}, 0)
 
-	g.DrawTile(0) // 7검을 든 상태에서 몰수
+	g.DrawTile(0, DVBlack) // 7검을 든 상태에서 몰수
 	g.ForfeitPlayer(0)
 
 	p := g.Players[0]
@@ -484,7 +525,7 @@ func TestDVInvalidActions(t *testing.T) {
 	}, []DVTile{dvTile(7, DVBlack, 7), dvTile(3, DVBlack, 3)}, 0)
 
 	// 남의 턴에 뽑기
-	if _, err := g.DrawTile(1); err == nil {
+	if _, err := g.DrawTile(1, DVBlack); err == nil {
 		t.Fatal("남의 턴 뽑기는 거부")
 	}
 	// draw 단계에서 추리
@@ -492,7 +533,7 @@ func TestDVInvalidActions(t *testing.T) {
 		t.Fatal("draw 단계 추리는 거부")
 	}
 
-	g.DrawTile(0)
+	g.DrawTile(0, DVBlack)
 
 	// 자기 자신 추리
 	if _, err := g.Guess(0, 0, 0, 2); err == nil {

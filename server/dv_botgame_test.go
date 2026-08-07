@@ -14,6 +14,8 @@ type dvBotState struct {
 	YourSeat          int    `json:"yourSeat"`
 	Phase             string `json:"phase"`
 	CurrentSeat       int    `json:"currentSeat"`
+	DeckBlackCount    int    `json:"deckBlackCount"`
+	DeckWhiteCount    int    `json:"deckWhiteCount"`
 	YourPendingJokers []struct {
 		ID int `json:"id"`
 	} `json:"yourPendingJokers"`
@@ -60,7 +62,11 @@ func (b *dvBot) handleState(state dvBotState) {
 
 	switch state.Phase {
 	case string(DVPhaseDraw):
-		b.send(DVMessage{Type: DVMsgDrawTile})
+		color := DVBlack
+		if state.DeckBlackCount == 0 {
+			color = DVWhite
+		}
+		b.send(DVMessage{Type: DVMsgDrawTile, Payload: DVDrawTilePayload{Color: color}})
 
 	case string(DVPhaseGuess):
 		// 첫 번째 상대의 첫 비공개 타일을 -1~11 순환 값으로 추리

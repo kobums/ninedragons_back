@@ -113,7 +113,7 @@ func (h *DVHub) handleGameMessage(gm DVGameMessage) {
 	case DVMsgPlaceJoker:
 		h.handlePlaceJoker(gm.Client, gm.Message)
 	case DVMsgDrawTile:
-		h.handleDrawTile(gm.Client)
+		h.handleDrawTile(gm.Client, gm.Message)
 	case DVMsgGuess:
 		h.handleGuess(gm.Client, gm.Message)
 	case DVMsgContinueChoice:
@@ -318,13 +318,17 @@ func (h *DVHub) handlePlaceJoker(client *DVClient, msg DVMessage) {
 	h.finishIfOver(room, "last_standing")
 }
 
-func (h *DVHub) handleDrawTile(client *DVClient) {
+func (h *DVHub) handleDrawTile(client *DVClient, msg DVMessage) {
 	room := h.roomOf(client)
 	if room == nil {
 		h.sendError(client, "게임을 찾을 수 없습니다")
 		return
 	}
-	tile, err := room.Game.DrawTile(client.Seat)
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload DVDrawTilePayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	tile, err := room.Game.DrawTile(client.Seat, payload.Color)
 	if err != nil {
 		h.sendError(client, err.Error())
 		return
@@ -499,6 +503,8 @@ func (h *DVHub) buildDVState(room *dvRoom, viewerSeat int) DVGameStatePayload {
 		Phase:             game.Phase,
 		CurrentSeat:       game.CurrentSeat,
 		DeckCount:         len(game.Deck),
+		DeckBlackCount:    game.DeckCountByColor(DVBlack),
+		DeckWhiteCount:    game.DeckCountByColor(DVWhite),
 		PlayerCount:       len(game.Players),
 		PendingJokerSeats: pendingSeats,
 		YourPendingJokers: yourPending,

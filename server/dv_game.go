@@ -203,22 +203,43 @@ func (g *DVGame) PlaceJoker(seat, tileID, position int) error {
 	}
 }
 
-// DrawTile 더미에서 한 장 뽑는다. 값은 허브가 본인에게만 보여준다.
-func (g *DVGame) DrawTile(seat int) (*DVTile, error) {
+// DeckCountByColor 더미에 남은 색별 타일 수
+func (g *DVGame) DeckCountByColor(color DVTileColor) int {
+	count := 0
+	for _, t := range g.Deck {
+		if t.Color == color {
+			count++
+		}
+	}
+	return count
+}
+
+// DrawTile 더미에서 원하는 색의 타일을 한 장 뽑는다. 원작에서 더미는
+// 뒷면(색만 보임)으로 펼쳐져 있어 원하는 타일을 집을 수 있는데, 같은 색
+// 뒷면끼리는 구분이 안 되므로 색 선택과 동치다. 더미는 이미 셔플돼
+// 있으므로 해당 색의 마지막 타일을 집으면 균등 랜덤과 같다.
+// 값은 허브가 본인에게만 보여준다.
+func (g *DVGame) DrawTile(seat int, color DVTileColor) (*DVTile, error) {
 	if g.Phase != DVPhaseDraw {
 		return nil, errors.New("지금은 타일을 뽑을 수 없습니다")
 	}
 	if seat != g.CurrentSeat {
 		return nil, errors.New("당신의 차례가 아닙니다")
 	}
-	if len(g.Deck) == 0 {
-		return nil, errors.New("더미가 비었습니다")
+	if color != DVBlack && color != DVWhite {
+		return nil, errors.New("검은색 또는 흰색을 선택하세요")
 	}
-	tile := g.Deck[len(g.Deck)-1]
-	g.Deck = g.Deck[:len(g.Deck)-1]
-	g.DrawnTile = &tile
-	g.Phase = DVPhaseGuess
-	return &tile, nil
+	for i := len(g.Deck) - 1; i >= 0; i-- {
+		if g.Deck[i].Color != color {
+			continue
+		}
+		tile := g.Deck[i]
+		g.Deck = append(g.Deck[:i], g.Deck[i+1:]...)
+		g.DrawnTile = &tile
+		g.Phase = DVPhaseGuess
+		return &tile, nil
+	}
+	return nil, errors.New("남은 해당 색 타일이 없습니다")
 }
 
 // DVGuessResult 추리 한 번의 결과

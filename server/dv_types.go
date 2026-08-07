@@ -147,6 +147,13 @@ type DVContinueChoicePayload struct {
 	Continue bool `json:"continue"`
 }
 
+// DVDrawTilePayload 뽑을 타일 색 선택. 원작에서 더미는 뒷면(색만 보임)으로
+// 펼쳐져 있고 원하는 타일을 집는다 — 같은 색끼리는 구분이 안 되므로
+// 색 선택과 동치다.
+type DVDrawTilePayload struct {
+	Color DVTileColor `json:"color"`
+}
+
 type DVRevealOwnPayload struct {
 	TileIndex int `json:"tileIndex"`
 }
@@ -197,6 +204,8 @@ type DVGameStatePayload struct {
 	Phase             DVPhase        `json:"phase"`
 	CurrentSeat       int            `json:"currentSeat"`
 	DeckCount         int            `json:"deckCount"`
+	DeckBlackCount    int            `json:"deckBlackCount"`
+	DeckWhiteCount    int            `json:"deckWhiteCount"`
 	PlayerCount       int            `json:"playerCount"`
 	PendingJokerSeats []int          `json:"pendingJokerSeats,omitempty"`
 	// YourPendingJokers 내가 아직 배치하지 않은 초기 조커 (본인에게만 값 포함)
