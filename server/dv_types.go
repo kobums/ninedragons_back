@@ -27,6 +27,7 @@ type DVPhase string
 
 const (
 	DVPhaseLobby           DVPhase = "lobby"
+	DVPhaseInitialDraw     DVPhase = "initial_draw"      // 시작 타일을 색 골라 가져가는 단계 (전원 동시)
 	DVPhaseJokerSetup      DVPhase = "joker_setup"       // 초기 배분 조커의 위치 선택 대기
 	DVPhaseDraw            DVPhase = "draw"              // 현재 턴 플레이어의 뽑기 대기
 	DVPhaseGuess           DVPhase = "guess"             // 추리 대기
@@ -46,6 +47,7 @@ const (
 	DVMsgStartGame      DVMessageType = "dv_start_game"
 	DVMsgRejoinGame     DVMessageType = "dv_rejoin_game"
 	DVMsgPlaceJoker     DVMessageType = "dv_place_joker"
+	DVMsgTakeInitial    DVMessageType = "dv_take_initial"
 	DVMsgDrawTile       DVMessageType = "dv_draw_tile"
 	DVMsgGuess          DVMessageType = "dv_guess"
 	DVMsgContinueChoice DVMessageType = "dv_continue_choice"
@@ -96,6 +98,9 @@ type DVGame struct {
 	// 줄(Tiles)에 임시로 섞어두면 배치 후 위치 이동이 상대에게 보여
 	// 조커 위치가 새므로, 배치 전에는 줄 밖에 따로 보관한다.
 	PendingJokerTiles map[int][]DVTile
+	// InitialRemaining initial_draw 단계에서 좌석별로 아직 가져와야 하는
+	// 시작 타일 수. 전원 0이 되면 다음 단계로 넘어간다.
+	InitialRemaining map[int]int
 	WinnerSeat        int // -1 = 미정
 	Ready             bool
 	StartedAt         time.Time
@@ -154,6 +159,12 @@ type DVDrawTilePayload struct {
 	Color DVTileColor `json:"color"`
 }
 
+// DVTakeInitialPayload 시작 타일 가져오기 색 선택. 원작 셋업에서도
+// 각자 원하는 타일을 가져가므로 흑/백 구성을 본인이 정한다.
+type DVTakeInitialPayload struct {
+	Color DVTileColor `json:"color"`
+}
+
 type DVRevealOwnPayload struct {
 	TileIndex int `json:"tileIndex"`
 }
@@ -193,7 +204,9 @@ type DVPlayerView struct {
 	Name       string       `json:"name"`
 	Connected  bool         `json:"connected"`
 	Eliminated bool         `json:"eliminated"`
-	Tiles      []DVTileView `json:"tiles"`
+	// InitialRemaining initial_draw 단계에서 아직 가져오지 않은 시작 타일 수
+	InitialRemaining int          `json:"initialRemaining,omitempty"`
+	Tiles            []DVTileView `json:"tiles"`
 }
 
 // DVGameStatePayload 개인화된 전체 게임 스냅샷. 모든 상태 변경 후

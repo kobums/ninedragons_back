@@ -98,7 +98,22 @@ func joinDVLobby(t *testing.T, c *dvTestClient, name string) string {
 	return state["sessionId"].(string)
 }
 
-// startDVThreePlayers 3인 입장 후 호스트가 시작. 각자의 세션과 첫 game_state 를 반환.
+// waitForState 조건을 만족하는 game_state 가 올 때까지 스냅샷을 소비한다
+func (c *dvTestClient) waitForState(t *testing.T, cond func(map[string]interface{}) bool) map[string]interface{} {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		state := dvPayloadMap(t, c.waitFor(t, DVMsgGameState))
+		if cond(state) {
+			return state
+		}
+	}
+	t.Fatal("조건을 만족하는 game_state 를 받지 못했다")
+	return nil
+}
+
+// startDVThreePlayers 3인 입장 → 호스트 시작 → 시작 타일까지 가져온 뒤
+// 각자의 세션과 셋업 완료 시점의 game_state 를 반환.
 func startDVThreePlayers(t *testing.T, url string) ([]*dvTestClient, []string, []map[string]interface{}) {
 	t.Helper()
 	clients := []*dvTestClient{dvDial(t, url), dvDial(t, url), dvDial(t, url)}
@@ -109,9 +124,19 @@ func startDVThreePlayers(t *testing.T, url string) ([]*dvTestClient, []string, [
 
 	clients[0].send(t, DVMessage{Type: DVMsgStartGame})
 
+	// 시작 타일 가져오기: 각자 검정 2 + 흰색 2 (3인×4장, 색별 13장이라 충분)
+	for _, c := range clients {
+		c.waitFor(t, DVMsgGameState)
+		for _, color := range []DVTileColor{DVBlack, DVBlack, DVWhite, DVWhite} {
+			c.send(t, DVMessage{Type: DVMsgTakeInitial, Payload: DVTakeInitialPayload{Color: color}})
+		}
+	}
+
 	states := make([]map[string]interface{}, 3)
 	for i, c := range clients {
-		states[i] = dvPayloadMap(t, c.waitFor(t, DVMsgGameState))
+		states[i] = c.waitForState(t, func(state map[string]interface{}) bool {
+			return state["phase"] != string(DVPhaseInitialDraw)
+		})
 	}
 	return clients, sessions, states
 }

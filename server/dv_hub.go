@@ -112,6 +112,8 @@ func (h *DVHub) handleGameMessage(gm DVGameMessage) {
 		h.handleRejoin(gm.Client, gm.Message)
 	case DVMsgPlaceJoker:
 		h.handlePlaceJoker(gm.Client, gm.Message)
+	case DVMsgTakeInitial:
+		h.handleTakeInitial(gm.Client, gm.Message)
 	case DVMsgDrawTile:
 		h.handleDrawTile(gm.Client, gm.Message)
 	case DVMsgGuess:
@@ -324,6 +326,25 @@ func (h *DVHub) handlePlaceJoker(client *DVClient, msg DVMessage) {
 	h.finishIfOver(room, "last_standing")
 }
 
+func (h *DVHub) handleTakeInitial(client *DVClient, msg DVMessage) {
+	room := h.roomOf(client)
+	if room == nil {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload DVTakeInitialPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if _, err := room.Game.TakeInitial(client.Seat, payload.Color); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	// 시작 타일은 인원×장수만큼 연달아 일어나므로 이벤트 토스트 없이
+	// 상태 스냅샷만 갱신한다
+	h.broadcastState(room)
+}
+
 func (h *DVHub) handleDrawTile(client *DVClient, msg DVMessage) {
 	room := h.roomOf(client)
 	if room == nil {
@@ -469,11 +490,12 @@ func (h *DVHub) buildDVPlayers(room *dvRoom, viewerSeat int, revealAll bool) []D
 			tiles = append(tiles, maskDVTile(tile, p.Seat, viewerSeat, revealAll))
 		}
 		views = append(views, DVPlayerView{
-			Seat:       p.Seat,
-			Name:       p.Name,
-			Connected:  c != nil && c.Connected,
-			Eliminated: p.Eliminated,
-			Tiles:      tiles,
+			Seat:             p.Seat,
+			Name:             p.Name,
+			Connected:        c != nil && c.Connected,
+			Eliminated:       p.Eliminated,
+			InitialRemaining: room.Game.InitialRemaining[p.Seat],
+			Tiles:            tiles,
 		})
 	}
 	return views

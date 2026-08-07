@@ -23,9 +23,10 @@ type dvBotState struct {
 		ID int `json:"id"`
 	} `json:"drawnTile"`
 	Players []struct {
-		Seat       int  `json:"seat"`
-		Eliminated bool `json:"eliminated"`
-		Tiles      []struct {
+		Seat             int  `json:"seat"`
+		Eliminated       bool `json:"eliminated"`
+		InitialRemaining int  `json:"initialRemaining"`
+		Tiles            []struct {
 			Revealed bool `json:"revealed"`
 		} `json:"tiles"`
 	} `json:"players"`
@@ -45,6 +46,20 @@ func (b *dvBot) send(msg DVMessage) {
 
 func (b *dvBot) handleState(state dvBotState) {
 	me := state.YourSeat
+
+	// 시작 타일 가져오기는 턴과 무관하게 처리한다
+	if state.Phase == string(DVPhaseInitialDraw) {
+		for _, p := range state.Players {
+			if p.Seat == me && p.InitialRemaining > 0 {
+				color := DVBlack
+				if state.DeckBlackCount == 0 {
+					color = DVWhite
+				}
+				b.send(DVMessage{Type: DVMsgTakeInitial, Payload: DVTakeInitialPayload{Color: color}})
+			}
+		}
+		return
+	}
 
 	// 초기 조커 배치는 턴과 무관하게 처리한다
 	if state.Phase == string(DVPhaseJokerSetup) {

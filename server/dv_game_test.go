@@ -65,6 +65,29 @@ func TestDVTileSetComposition(t *testing.T) {
 	}
 }
 
+// completeInitial 전원이 시작 타일을 다 가져올 때까지 색을 골라 가져온다
+// (검은색 우선, 없으면 흰색)
+func completeInitial(t *testing.T, g *DVGame) {
+	t.Helper()
+	for guard := 0; g.Phase == DVPhaseInitialDraw && guard < 100; guard++ {
+		for _, p := range g.Players {
+			if g.InitialRemaining[p.Seat] <= 0 {
+				continue
+			}
+			color := DVBlack
+			if g.DeckCountByColor(DVBlack) == 0 {
+				color = DVWhite
+			}
+			if _, err := g.TakeInitial(p.Seat, color); err != nil {
+				t.Fatalf("TakeInitial: %v", err)
+			}
+		}
+	}
+	if g.Phase == DVPhaseInitialDraw {
+		t.Fatal("initial_draw 가 끝나지 않았다")
+	}
+}
+
 func TestDVDealCounts(t *testing.T) {
 	cases := []struct {
 		players  int
@@ -85,6 +108,10 @@ func TestDVDealCounts(t *testing.T) {
 		if err := g.Start(rand.New(rand.NewSource(1))); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
+		if g.Phase != DVPhaseInitialDraw {
+			t.Fatalf("시작 직후 phase = %s, want initial_draw", g.Phase)
+		}
+		completeInitial(t, g)
 		for _, p := range g.Players {
 			total := len(p.Tiles) + len(g.PendingJokerTiles[p.Seat])
 			if total != c.handSize {
@@ -106,6 +133,7 @@ func TestDVStartHandSorted(t *testing.T) {
 		if err := g.Start(rand.New(rand.NewSource(seed))); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
+		completeInitial(t, g)
 		for _, p := range g.Players {
 			for i := 1; i < len(p.Tiles); i++ {
 				if dvTileLess(p.Tiles[i], p.Tiles[i-1]) {
@@ -113,6 +141,51 @@ func TestDVStartHandSorted(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestDVTakeInitialColorChoice(t *testing.T) {
+	g := NewDVGame("test")
+	g.AddPlayer("a")
+	g.AddPlayer("b")
+	if err := g.Start(rand.New(rand.NewSource(1))); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// 원하는 색으로 3검+1백 구성이 가능하다
+	wantColors := []DVTileColor{DVBlack, DVBlack, DVBlack, DVWhite}
+	for _, color := range wantColors {
+		tile, err := g.TakeInitial(0, color)
+		if err != nil {
+			t.Fatalf("TakeInitial(%s): %v", color, err)
+		}
+		if tile.Color != color {
+			t.Fatalf("%s 를 골랐는데 %s 가 나왔다", color, tile.Color)
+		}
+	}
+	// 4장을 다 가져오면 추가 요청은 거부
+	if _, err := g.TakeInitial(0, DVBlack); err == nil {
+		t.Fatal("초과 가져오기가 허용됐다")
+	}
+	// 아직 상대가 안 끝났으니 initial_draw 유지
+	if g.Phase != DVPhaseInitialDraw {
+		t.Fatalf("phase = %s, want initial_draw", g.Phase)
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := g.TakeInitial(1, DVWhite); err != nil {
+			t.Fatalf("TakeInitial seat1: %v", err)
+		}
+	}
+	if g.Phase == DVPhaseInitialDraw {
+		t.Fatal("전원 완료 후에도 initial_draw 에 머물러 있다")
+	}
+	// 시작 타일 단계에서는 뽑기가 거부된다
+	g2 := NewDVGame("t2")
+	g2.AddPlayer("a")
+	g2.AddPlayer("b")
+	g2.Start(rand.New(rand.NewSource(1)))
+	if _, err := g2.DrawTile(g2.CurrentSeat, DVBlack); err == nil {
+		t.Fatal("initial_draw 중 DrawTile 이 허용됐다")
 	}
 }
 
@@ -150,56 +223,42 @@ func TestDVTileOrdering(t *testing.T) {
 }
 
 func TestDVJokerSetupFlow(t *testing.T) {
+	// 시작 타일로 조커를 가져오면 배치 대기로 빠지고, 전원이 시작 타일과
+	// 조커 배치를 마쳐야 draw 로 넘어간다. 더미를 직접 구성해 seat0 의
+	// 검은색 선택이 조커를 집도록 만든다 (takeFromDeck 은 뒤에서부터 집는다).
 	g := NewDVGame("test")
-	g.AddPlayer("a")
-	g.AddPlayer("b")
+	g.Players = append(g.Players, &DVPlayer{Seat: 0, Name: "a"}, &DVPlayer{Seat: 1, Name: "b"})
+	g.Deck = []DVTile{dvTile(17, DVWhite, 5), dvJoker(24, DVBlack)}
+	g.InitialRemaining = map[int]int{0: 1, 1: 1}
+	g.Ready = true
+	g.Phase = DVPhaseInitialDraw
+	g.CurrentSeat = 0
 
-	// 조커가 초기 손패에 들어가는 시드를 찾는다
-	var seed int64 = -1
-	for s := int64(0); s < 200; s++ {
-		trial := NewDVGame("trial")
-		trial.AddPlayer("a")
-		trial.AddPlayer("b")
-		trial.Start(rand.New(rand.NewSource(s)))
-		if trial.Phase == DVPhaseJokerSetup {
-			seed = s
-			break
-		}
+	tile, err := g.TakeInitial(0, DVBlack)
+	if err != nil {
+		t.Fatalf("TakeInitial: %v", err)
 	}
-	if seed == -1 {
-		t.Fatal("조커 초기 배분 시드를 찾지 못했다")
+	if !tile.Joker {
+		t.Fatalf("조커가 나와야 하는데 %+v", tile)
 	}
-
-	g.Start(rand.New(rand.NewSource(seed)))
+	if len(g.PendingJokerTiles[0]) != 1 {
+		t.Fatal("가져온 조커는 배치 대기로 가야 한다")
+	}
+	if _, err := g.TakeInitial(1, DVWhite); err != nil {
+		t.Fatalf("TakeInitial seat1: %v", err)
+	}
 	if g.Phase != DVPhaseJokerSetup {
 		t.Fatalf("phase = %s, want joker_setup", g.Phase)
 	}
 
-	// 대기 조커 전부 배치하면 draw 로 넘어간다
-	for seat, pending := range g.PendingJokerTiles {
-		for _, joker := range append([]DVTile{}, pending...) {
-			if err := g.PlaceJoker(seat, joker.ID, 0); err != nil {
-				t.Fatalf("PlaceJoker: %v", err)
-			}
-		}
+	if err := g.PlaceJoker(0, 24, 0); err != nil {
+		t.Fatalf("PlaceJoker: %v", err)
 	}
 	if g.Phase != DVPhaseDraw {
 		t.Fatalf("배치 완료 후 phase = %s, want draw", g.Phase)
 	}
-	// 배치된 조커는 줄 안에 있어야 한다
-	jokersInRows := 0
-	for _, p := range g.Players {
-		for _, tile := range p.Tiles {
-			if tile.Joker {
-				jokersInRows++
-				if tile.Revealed {
-					t.Fatal("초기 조커는 비공개로 배치돼야 한다")
-				}
-			}
-		}
-	}
-	if jokersInRows == 0 {
-		t.Fatal("조커가 줄에 없다")
+	if !g.Players[0].Tiles[0].Joker || g.Players[0].Tiles[0].Revealed {
+		t.Fatalf("초기 조커는 비공개로 줄에 있어야 한다: %+v", g.Players[0].Tiles)
 	}
 }
 

@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"math/rand"
-	"sort"
 	"time"
 )
 
@@ -64,7 +63,9 @@ func (g *DVGame) CanStart() bool {
 	return g.Phase == DVPhaseLobby && len(g.Players) >= 2
 }
 
-// Start 셔플·배분 후 게임 시작. 초기 손패에 조커가 있으면 joker_setup 부터.
+// Start 셔플 후 시작 타일 가져오기(initial_draw) 단계로 진입한다.
+// 원작 셋업에서도 각자 원하는 타일(=원하는 색)을 가져가므로 서버가
+// 나눠주지 않고 플레이어가 색을 골라 가져간다.
 func (g *DVGame) Start(rng *rand.Rand) error {
 	if !g.CanStart() {
 		return errors.New("시작할 수 없습니다 (2명 이상 필요)")
@@ -78,33 +79,73 @@ func (g *DVGame) Start(rng *rand.Rand) error {
 	if len(g.Players) == 4 {
 		handSize = 3
 	}
-
+	g.InitialRemaining = map[int]int{}
 	for _, p := range g.Players {
-		hand := deck[:handSize]
-		deck = deck[handSize:]
-
-		// 조커는 위치를 소유자가 골라야 하므로 줄 밖에 보관
-		for _, t := range hand {
-			if t.Joker {
-				g.PendingJokerTiles[p.Seat] = append(g.PendingJokerTiles[p.Seat], t)
-			} else {
-				p.Tiles = append(p.Tiles, t)
-			}
-		}
-		sort.Slice(p.Tiles, func(i, j int) bool { return dvTileLess(p.Tiles[i], p.Tiles[j]) })
+		g.InitialRemaining[p.Seat] = handSize
 	}
 
 	g.Deck = deck
 	g.CurrentSeat = rng.Intn(len(g.Players))
 	g.Ready = true
 	g.StartedAt = time.Now()
+	g.Phase = DVPhaseInitialDraw
+	return nil
+}
 
+// takeFromDeck 더미에서 원하는 색의 타일을 한 장 꺼낸다. 더미는 셔플돼
+// 있으므로 해당 색의 마지막 타일을 집으면 균등 랜덤과 같다.
+func (g *DVGame) takeFromDeck(color DVTileColor) (*DVTile, error) {
+	if color != DVBlack && color != DVWhite {
+		return nil, errors.New("검은색 또는 흰색을 선택하세요")
+	}
+	for i := len(g.Deck) - 1; i >= 0; i-- {
+		if g.Deck[i].Color != color {
+			continue
+		}
+		tile := g.Deck[i]
+		g.Deck = append(g.Deck[:i], g.Deck[i+1:]...)
+		return &tile, nil
+	}
+	return nil, errors.New("남은 해당 색 타일이 없습니다")
+}
+
+// TakeInitial 시작 타일 한 장을 색 골라 가져온다. 턴과 무관하게 전원이
+// 동시에 진행하며, 전원이 다 가져오면 조커 배치 또는 본게임으로 넘어간다.
+func (g *DVGame) TakeInitial(seat int, color DVTileColor) (*DVTile, error) {
+	if g.Phase != DVPhaseInitialDraw {
+		return nil, errors.New("지금은 시작 타일을 가져올 수 없습니다")
+	}
+	if g.InitialRemaining[seat] <= 0 {
+		return nil, errors.New("이미 시작 타일을 모두 가져왔습니다")
+	}
+	tile, err := g.takeFromDeck(color)
+	if err != nil {
+		return nil, err
+	}
+	// 조커는 위치를 소유자가 골라야 하므로 줄 밖에 보관
+	if tile.Joker {
+		g.PendingJokerTiles[seat] = append(g.PendingJokerTiles[seat], *tile)
+	} else {
+		g.insertTile(seat, *tile)
+	}
+	g.InitialRemaining[seat]--
+	if g.InitialRemaining[seat] == 0 {
+		delete(g.InitialRemaining, seat)
+	}
+	g.finishInitialIfDone()
+	return tile, nil
+}
+
+// finishInitialIfDone 전원이 시작 타일을 다 가져왔으면 다음 단계로
+func (g *DVGame) finishInitialIfDone() {
+	if g.Phase != DVPhaseInitialDraw || len(g.InitialRemaining) != 0 {
+		return
+	}
 	if len(g.PendingJokerTiles) > 0 {
 		g.Phase = DVPhaseJokerSetup
 	} else {
 		g.Phase = DVPhaseDraw
 	}
-	return nil
 }
 
 // dvTileLess 배치 순서 비교: 값 오름차순, 동값이면 검정 < 흰색
@@ -216,8 +257,7 @@ func (g *DVGame) DeckCountByColor(color DVTileColor) int {
 
 // DrawTile 더미에서 원하는 색의 타일을 한 장 뽑는다. 원작에서 더미는
 // 뒷면(색만 보임)으로 펼쳐져 있어 원하는 타일을 집을 수 있는데, 같은 색
-// 뒷면끼리는 구분이 안 되므로 색 선택과 동치다. 더미는 이미 셔플돼
-// 있으므로 해당 색의 마지막 타일을 집으면 균등 랜덤과 같다.
+// 뒷면끼리는 구분이 안 되므로 색 선택과 동치다.
 // 값은 허브가 본인에게만 보여준다.
 func (g *DVGame) DrawTile(seat int, color DVTileColor) (*DVTile, error) {
 	if g.Phase != DVPhaseDraw {
@@ -226,20 +266,13 @@ func (g *DVGame) DrawTile(seat int, color DVTileColor) (*DVTile, error) {
 	if seat != g.CurrentSeat {
 		return nil, errors.New("당신의 차례가 아닙니다")
 	}
-	if color != DVBlack && color != DVWhite {
-		return nil, errors.New("검은색 또는 흰색을 선택하세요")
+	tile, err := g.takeFromDeck(color)
+	if err != nil {
+		return nil, err
 	}
-	for i := len(g.Deck) - 1; i >= 0; i-- {
-		if g.Deck[i].Color != color {
-			continue
-		}
-		tile := g.Deck[i]
-		g.Deck = append(g.Deck[:i], g.Deck[i+1:]...)
-		g.DrawnTile = &tile
-		g.Phase = DVPhaseGuess
-		return &tile, nil
-	}
-	return nil, errors.New("남은 해당 색 타일이 없습니다")
+	g.DrawnTile = tile
+	g.Phase = DVPhaseGuess
+	return tile, nil
 }
 
 // DVGuessResult 추리 한 번의 결과
@@ -384,6 +417,10 @@ func (g *DVGame) ForfeitPlayer(seat int) {
 	if p.Eliminated {
 		return
 	}
+
+	// 시작 타일을 다 못 가져간 상태의 몰수: 남은 몫은 포기 처리
+	delete(g.InitialRemaining, seat)
+	g.finishInitialIfDone()
 
 	// 배치 대기 중이던 초기 조커는 줄 끝에 공개로 붙인다
 	for _, t := range g.PendingJokerTiles[seat] {
