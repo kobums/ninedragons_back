@@ -2,8 +2,6 @@ package server
 
 import (
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // ==================== DaVinci Code Game Types ====================
@@ -54,14 +52,14 @@ const (
 	DVMsgRevealOwn      DVMessageType = "dv_reveal_own"
 
 	// 서버 → 클라이언트
-	DVMsgLobbyState          DVMessageType = "dv_lobby_state"
-	DVMsgGameState           DVMessageType = "dv_game_state"
-	DVMsgEvent               DVMessageType = "dv_event"
-	DVMsgGameOver            DVMessageType = "dv_game_over"
-	DVMsgPlayerDisconnected  DVMessageType = "dv_player_disconnected"
-	DVMsgPlayerReconnected   DVMessageType = "dv_player_reconnected"
-	DVMsgSessionExpired      DVMessageType = "dv_session_expired"
-	DVMsgError               DVMessageType = "dv_error"
+	DVMsgLobbyState         DVMessageType = "dv_lobby_state"
+	DVMsgGameState          DVMessageType = "dv_game_state"
+	DVMsgEvent              DVMessageType = "dv_event"
+	DVMsgGameOver           DVMessageType = "dv_game_over"
+	DVMsgPlayerDisconnected DVMessageType = "dv_player_disconnected"
+	DVMsgPlayerReconnected  DVMessageType = "dv_player_reconnected"
+	DVMsgSessionExpired     DVMessageType = "dv_session_expired"
+	DVMsgError              DVMessageType = "dv_error"
 )
 
 // DVTile 타일 하나. Value 는 0~11, 조커는 DVJokerValue(-1)에 Joker=true.
@@ -101,22 +99,16 @@ type DVGame struct {
 	// InitialRemaining initial_draw 단계에서 좌석별로 아직 가져와야 하는
 	// 시작 타일 수. 전원 0이 되면 다음 단계로 넘어간다.
 	InitialRemaining map[int]int
-	WinnerSeat        int // -1 = 미정
-	Ready             bool
-	StartedAt         time.Time
+	WinnerSeat       int // -1 = 미정
+	Ready            bool
+	StartedAt        time.Time
 }
 
 // DVClient 다빈치코드 클라이언트 연결
 type DVClient struct {
-	ID        string
-	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
-	Name      string
-	Conn      *websocket.Conn
-	Hub       *DVHub
-	Send      chan []byte
-	GameID    string
-	Seat      int
-	Connected bool // DVHub 고루틴에서만 접근
+	wsClient
+	Hub  *DVHub
+	Seat int
 }
 
 // DVMessage 메시지 봉투
@@ -200,10 +192,10 @@ type DVTileView struct {
 
 // DVPlayerView 수신자 관점의 플레이어 상태
 type DVPlayerView struct {
-	Seat       int          `json:"seat"`
-	Name       string       `json:"name"`
-	Connected  bool         `json:"connected"`
-	Eliminated bool         `json:"eliminated"`
+	Seat       int    `json:"seat"`
+	Name       string `json:"name"`
+	Connected  bool   `json:"connected"`
+	Eliminated bool   `json:"eliminated"`
 	// InitialRemaining initial_draw 단계에서 아직 가져오지 않은 시작 타일 수
 	InitialRemaining int          `json:"initialRemaining,omitempty"`
 	Tiles            []DVTileView `json:"tiles"`
@@ -212,14 +204,14 @@ type DVPlayerView struct {
 // DVGameStatePayload 개인화된 전체 게임 스냅샷. 모든 상태 변경 후
 // 좌석마다 따로 만들어 보낸다. 재접속 복원도 같은 페이로드를 쓴다.
 type DVGameStatePayload struct {
-	GameID            string         `json:"gameId"`
-	YourSeat          int            `json:"yourSeat"`
-	Phase             DVPhase        `json:"phase"`
-	CurrentSeat       int            `json:"currentSeat"`
-	DeckCount         int            `json:"deckCount"`
-	DeckBlackCount    int            `json:"deckBlackCount"`
-	DeckWhiteCount    int            `json:"deckWhiteCount"`
-	PlayerCount       int            `json:"playerCount"`
+	GameID         string  `json:"gameId"`
+	YourSeat       int     `json:"yourSeat"`
+	Phase          DVPhase `json:"phase"`
+	CurrentSeat    int     `json:"currentSeat"`
+	DeckCount      int     `json:"deckCount"`
+	DeckBlackCount int     `json:"deckBlackCount"`
+	DeckWhiteCount int     `json:"deckWhiteCount"`
+	PlayerCount    int     `json:"playerCount"`
 	// YourPendingJokers 내가 아직 배치하지 않은 초기 조커 (본인에게만 값 포함)
 	YourPendingJokers []DVTileView   `json:"yourPendingJokers,omitempty"`
 	DrawnTile         *DVTileView    `json:"drawnTile,omitempty"`
@@ -230,16 +222,16 @@ type DVGameStatePayload struct {
 type DVEventPayload struct {
 	Kind string `json:"kind"`
 	// guess_made
-	GuesserSeat  int  `json:"guesserSeat,omitempty"`
-	TargetSeat   int  `json:"targetSeat,omitempty"`
-	TileIndex    int  `json:"tileIndex,omitempty"`
-	GuessedValue *int `json:"guessedValue,omitempty"`
+	GuesserSeat  int   `json:"guesserSeat,omitempty"`
+	TargetSeat   int   `json:"targetSeat,omitempty"`
+	TileIndex    int   `json:"tileIndex,omitempty"`
+	GuessedValue *int  `json:"guessedValue,omitempty"`
 	Correct      *bool `json:"correct,omitempty"`
 	// game_started / tile_drawn / joker_placed / turn_stopped /
 	// tile_revealed / player_eliminated / player_forfeited
-	Seat  *int         `json:"seat,omitempty"`
-	Color DVTileColor  `json:"color,omitempty"`
-	Value *int         `json:"value,omitempty"`
+	Seat  *int        `json:"seat,omitempty"`
+	Color DVTileColor `json:"color,omitempty"`
+	Value *int        `json:"value,omitempty"`
 }
 
 // DVGameOverPayload 게임 종료. 전 플레이어의 타일을 전부 공개해 보낸다.

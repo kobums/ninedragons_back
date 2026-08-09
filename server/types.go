@@ -2,8 +2,6 @@ package server
 
 import (
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // Player 색상
@@ -39,15 +37,9 @@ const (
 
 // Client 구조체
 type Client struct {
-	ID        string
-	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
-	Name      string
-	Conn      *websocket.Conn
-	Hub       *Hub
-	Send      chan []byte
-	GameID    string
-	Color     PlayerColor
-	Connected bool // Hub 고루틴에서만 접근
+	wsClient
+	Hub   *Hub
+	Color PlayerColor
 }
 
 // Game 구조체
@@ -142,13 +134,13 @@ type GameStatePayload struct {
 }
 
 type TilePlayedPayload struct {
-	Color        PlayerColor `json:"color"`
-	Tile         int         `json:"tile"`
-	Round        int         `json:"round"`
-	NextPlayer   PlayerColor `json:"nextPlayer"`
-	WaitingFor   PlayerColor `json:"waitingFor"`
-	BlueTilePlayed bool      `json:"blueTilePlayed"`
-	RedTilePlayed  bool      `json:"redTilePlayed"`
+	Color          PlayerColor `json:"color"`
+	Tile           int         `json:"tile"`
+	Round          int         `json:"round"`
+	NextPlayer     PlayerColor `json:"nextPlayer"`
+	WaitingFor     PlayerColor `json:"waitingFor"`
+	BlueTilePlayed bool        `json:"blueTilePlayed"`
+	RedTilePlayed  bool        `json:"redTilePlayed"`
 }
 
 // ==================== NumberChange Game Types ====================
@@ -165,16 +157,16 @@ const (
 type NCMessageType string
 
 const (
-	NCMsgJoinGame       NCMessageType = "nc_join_game"
-	NCMsgGameStart      NCMessageType = "nc_game_start"
-	NCMsgSubmitBlocks   NCMessageType = "nc_submit_blocks"
-	NCMsgSelectBlock    NCMessageType = "nc_select_block"
-	NCMsgRoundResult    NCMessageType = "nc_round_result"
-	NCMsgGameOver       NCMessageType = "nc_game_over"
-	NCMsgError          NCMessageType = "nc_error"
-	NCMsgPlayerJoined   NCMessageType = "nc_player_joined"
-	NCMsgWaitingPlayer  NCMessageType = "nc_waiting_player"
-	NCMsgUseHidden      NCMessageType = "nc_use_hidden"
+	NCMsgJoinGame      NCMessageType = "nc_join_game"
+	NCMsgGameStart     NCMessageType = "nc_game_start"
+	NCMsgSubmitBlocks  NCMessageType = "nc_submit_blocks"
+	NCMsgSelectBlock   NCMessageType = "nc_select_block"
+	NCMsgRoundResult   NCMessageType = "nc_round_result"
+	NCMsgGameOver      NCMessageType = "nc_game_over"
+	NCMsgError         NCMessageType = "nc_error"
+	NCMsgPlayerJoined  NCMessageType = "nc_player_joined"
+	NCMsgWaitingPlayer NCMessageType = "nc_waiting_player"
+	NCMsgUseHidden     NCMessageType = "nc_use_hidden"
 
 	// 재접속 관련
 	NCMsgRejoinGame           NCMessageType = "nc_rejoin_game"
@@ -186,15 +178,9 @@ const (
 
 // NCClient 넘버체인지 클라이언트
 type NCClient struct {
-	ID        string
-	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
-	Name      string
-	Conn      *websocket.Conn
-	Hub       *NCHub
-	Send      chan []byte
-	GameID    string
-	Team      TeamColor
-	Connected bool // NCHub 고루틴에서만 접근
+	wsClient
+	Hub  *NCHub
+	Team TeamColor
 }
 
 // NCGame 넘버체인지 게임
@@ -224,18 +210,18 @@ type NCSubmit struct {
 
 // NCRoundHistory 라운드 히스토리
 type NCRoundHistory struct {
-	Round             int       `json:"round"`
-	Team1Block1       int       `json:"team1Block1"`
-	Team1Block2       int       `json:"team1Block2"`
-	Team1Total        int       `json:"team1Total"`
-	Team2Block1       int       `json:"team2Block1"`
-	Team2Block2       int       `json:"team2Block2"`
-	Team2Total        int       `json:"team2Total"`
-	Winner            TeamColor `json:"winner"`
-	Team1Hidden       bool      `json:"team1Hidden"`
-	Team2Hidden       bool      `json:"team2Hidden"`
-	Team1ReceivedBlock int      `json:"team1ReceivedBlock"`
-	Team2ReceivedBlock int      `json:"team2ReceivedBlock"`
+	Round              int       `json:"round"`
+	Team1Block1        int       `json:"team1Block1"`
+	Team1Block2        int       `json:"team1Block2"`
+	Team1Total         int       `json:"team1Total"`
+	Team2Block1        int       `json:"team2Block1"`
+	Team2Block2        int       `json:"team2Block2"`
+	Team2Total         int       `json:"team2Total"`
+	Winner             TeamColor `json:"winner"`
+	Team1Hidden        bool      `json:"team1Hidden"`
+	Team2Hidden        bool      `json:"team2Hidden"`
+	Team1ReceivedBlock int       `json:"team1ReceivedBlock"`
+	Team2ReceivedBlock int       `json:"team2ReceivedBlock"`
 }
 
 // NCMessage 넘버체인지 메시지
@@ -265,21 +251,21 @@ type NCSelectBlockPayload struct {
 
 // NCRoundResultPayload 라운드 결과
 type NCRoundResultPayload struct {
-	Round             int       `json:"round"`
-	Team1Block1       int       `json:"team1Block1"`
-	Team1Block2       int       `json:"team1Block2"`
-	Team1Total        int       `json:"team1Total"`
-	Team2Block1       int       `json:"team2Block1"`
-	Team2Block2       int       `json:"team2Block2"`
-	Team2Total        int       `json:"team2Total"`
-	Winner            TeamColor `json:"winner"`
-	Team1Score        int       `json:"team1Score"`
-	Team2Score        int       `json:"team2Score"`
-	Team1Hidden       bool      `json:"team1Hidden"`
-	Team2Hidden       bool      `json:"team2Hidden"`
-	Team1ReceivedBlock int      `json:"team1ReceivedBlock"`
-	Team2ReceivedBlock int      `json:"team2ReceivedBlock"`
-	NextTeam          TeamColor `json:"nextTeam"`
+	Round              int       `json:"round"`
+	Team1Block1        int       `json:"team1Block1"`
+	Team1Block2        int       `json:"team1Block2"`
+	Team1Total         int       `json:"team1Total"`
+	Team2Block1        int       `json:"team2Block1"`
+	Team2Block2        int       `json:"team2Block2"`
+	Team2Total         int       `json:"team2Total"`
+	Winner             TeamColor `json:"winner"`
+	Team1Score         int       `json:"team1Score"`
+	Team2Score         int       `json:"team2Score"`
+	Team1Hidden        bool      `json:"team1Hidden"`
+	Team2Hidden        bool      `json:"team2Hidden"`
+	Team1ReceivedBlock int       `json:"team1ReceivedBlock"`
+	Team2ReceivedBlock int       `json:"team2ReceivedBlock"`
+	NextTeam           TeamColor `json:"nextTeam"`
 }
 
 // NCGameOverPayload 게임 종료
@@ -292,10 +278,10 @@ type NCGameOverPayload struct {
 
 // NCGameStartPayload 게임 시작
 type NCGameStartPayload struct {
-	YourTeam   TeamColor `json:"yourTeam"`
-	FirstTeam  TeamColor `json:"firstTeam"`
-	Team1Name  string    `json:"team1Name"`
-	Team2Name  string    `json:"team2Name"`
+	YourTeam  TeamColor `json:"yourTeam"`
+	FirstTeam TeamColor `json:"firstTeam"`
+	Team1Name string    `json:"team1Name"`
+	Team2Name string    `json:"team2Name"`
 }
 
 // NCErrorPayload 에러

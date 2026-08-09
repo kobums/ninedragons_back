@@ -2,8 +2,6 @@ package server
 
 import (
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // ==================== Jekyll vs Hyde Game Types ====================
@@ -30,8 +28,8 @@ const (
 var jhEvilSuits = []JHSuit{JHPride, JHWrath, JHGreed}
 
 const (
-	JHEvilMaxValue    = 7  // 악 카드 숫자 1~7
-	JHPotionMinValue  = 2  // 물약 2+~5+
+	JHEvilMaxValue    = 7 // 악 카드 숫자 1~7
+	JHPotionMinValue  = 2 // 물약 2+~5+
 	JHPotionMaxValue  = 5
 	JHHandSize        = 10 // 라운드당 손패
 	JHRounds          = 3  // 총 라운드
@@ -153,15 +151,9 @@ type jhRng interface {
 
 // JHClient 지킬 앤 하이드 클라이언트 연결
 type JHClient struct {
-	ID        string
-	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
-	Name      string
-	Conn      *websocket.Conn
-	Hub       *JHHub
-	Send      chan []byte
-	GameID    string
-	Role      JHRole
-	Connected bool // JHHub 고루틴에서만 접근
+	wsClient
+	Hub  *JHHub
+	Role JHRole
 }
 
 // JHMessage 메시지 봉투

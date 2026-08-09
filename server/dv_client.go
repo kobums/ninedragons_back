@@ -94,12 +94,14 @@ func ServeDVWs(hub *DVHub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &DVClient{
-		ID:        uuid.New().String(),
-		Hub:       hub,
-		Conn:      conn,
-		Send:      make(chan []byte, 256),
-		Seat:      -1,
-		Connected: true,
+		wsClient: wsClient{
+			ID:        uuid.New().String(),
+			Conn:      conn,
+			Send:      make(chan []byte, 256),
+			Connected: true,
+		},
+		Hub:  hub,
+		Seat: -1,
 	}
 
 	client.Hub.register <- client

@@ -109,11 +109,13 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		ID:        uuid.New().String(),
-		Hub:       hub,
-		Conn:      conn,
-		Send:      make(chan []byte, 256),
-		Connected: true,
+		wsClient: wsClient{
+			ID:        uuid.New().String(),
+			Conn:      conn,
+			Send:      make(chan []byte, 256),
+			Connected: true,
+		},
+		Hub: hub,
 	}
 
 	client.Hub.register <- client

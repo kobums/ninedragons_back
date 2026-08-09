@@ -2,8 +2,6 @@ package server
 
 import (
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // ==================== Schotten Totten Game Types ====================
@@ -171,15 +169,9 @@ type STGame struct {
 
 // STClient 쇼텐토텐 클라이언트 연결
 type STClient struct {
-	ID        string
-	SessionID string // 연결이 아닌 플레이어 신원 식별자 (재접속 시 유지)
-	Name      string
-	Conn      *websocket.Conn
-	Hub       *STHub
-	Send      chan []byte
-	GameID    string
-	Side      STSide
-	Connected bool // STHub 고루틴에서만 접근
+	wsClient
+	Hub  *STHub
+	Side STSide
 }
 
 // STMessage 메시지 봉투
