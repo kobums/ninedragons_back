@@ -709,24 +709,10 @@ func (h *STHub) sendError(client *STClient, message string) {
 }
 
 func (h *STHub) sendToClient(client *STClient, message STMessage) {
-	// 연결이 끊긴(재접속 대기 중) 플레이어에게는 보내지 않는다
-	if client == nil || !client.Connected {
+	if client == nil {
 		return
 	}
-
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Printf("[ST] Error marshaling message: %v", err)
-		return
-	}
-
-	select {
-	case client.Send <- data:
-	default:
-		// 버퍼가 가득 찬 연결은 죽은 것으로 간주하고 닫는다
-		client.Connected = false
-		close(client.Send)
-	}
+	sendTo(&client.wsClient, message, "[ST] ")
 }
 
 func (h *STHub) broadcastToRoom(room *stRoom, message STMessage) {

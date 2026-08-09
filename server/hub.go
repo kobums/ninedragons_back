@@ -609,25 +609,10 @@ func matchDuration(startedAt time.Time) string {
 }
 
 func (h *Hub) sendToClient(client *Client, message Message) {
-	// 연결이 끊긴(재접속 대기 중) 플레이어에게는 보내지 않는다
-	if client == nil || !client.Connected {
+	if client == nil {
 		return
 	}
-
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Printf("Error marshaling message: %v", err)
-		return
-	}
-
-	select {
-	case client.Send <- data:
-	default:
-		// 버퍼가 가득 찬 연결은 죽은 것으로 간주하고 닫는다
-		// (이후 readPump 종료 → unregister 경로에서 세션 정리가 이어진다)
-		client.Connected = false
-		close(client.Send)
-	}
+	sendTo(&client.wsClient, message, "")
 }
 
 func (h *Hub) broadcastToGame(game *Game, message Message) {
