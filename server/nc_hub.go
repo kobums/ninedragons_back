@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -20,9 +19,6 @@ type NCHub struct {
 	// 대기 중인 게임
 	waitingGame *NCGame
 
-	// 클라이언트로부터 받은 메시지
-	broadcast chan []byte
-
 	// 클라이언트 등록
 	register chan *NCClient
 
@@ -32,17 +28,8 @@ type NCHub struct {
 	// 게임 메시지
 	gameMessage chan NCGameMessage
 
-	// 세션 ID → 현재(또는 마지막) 클라이언트
-	sessions map[string]*NCClient
-
-	// 세션 ID → 재접속 대기 타이머
-	graceTimers map[string]*time.Timer
-
-	// 재접속 대기 시간 만료 알림
-	graceExpired chan string
-
-	// 재접속 대기 시간
-	grace time.Duration
+	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
+	sessionManager[*NCClient]
 }
 
 type NCGameMessage struct {
@@ -52,16 +39,12 @@ type NCGameMessage struct {
 
 func NewNCHub() *NCHub {
 	return &NCHub{
-		broadcast:    make(chan []byte),
-		register:     make(chan *NCClient),
-		unregister:   make(chan *NCClient),
-		clients:      make(map[*NCClient]bool),
-		games:        make(map[string]*NCGame),
-		gameMessage:  make(chan NCGameMessage),
-		sessions:     make(map[string]*NCClient),
-		graceTimers:  make(map[string]*time.Timer),
-		graceExpired: make(chan string),
-		grace:        defaultDisconnectGrace,
+		register:       make(chan *NCClient),
+		unregister:     make(chan *NCClient),
+		clients:        make(map[*NCClient]bool),
+		games:          make(map[string]*NCGame),
+		gameMessage:    make(chan NCGameMessage),
+		sessionManager: newSessionManager[*NCClient](),
 	}
 }
 
@@ -98,13 +81,13 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 		return
 	}
 	// 이미 새 연결로 교체된 세션의 옛 연결
-	if h.sessions[client.SessionID] != client {
+	if !h.isCurrent(client) {
 		return
 	}
 
 	game := h.games[client.GameID]
 	if game == nil {
-		delete(h.sessions, client.SessionID)
+		h.drop(client.SessionID)
 		return
 	}
 
@@ -114,7 +97,7 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 		if h.waitingGame != nil && h.waitingGame.ID == game.ID {
 			h.waitingGame = nil
 		}
-		delete(h.sessions, client.SessionID)
+		h.drop(client.SessionID)
 		return
 	}
 
@@ -132,22 +115,15 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 		})
 	}
 
-	sessionID := client.SessionID
-	h.graceTimers[sessionID] = time.AfterFunc(h.grace, func() {
-		h.graceExpired <- sessionID
-	})
+	h.startGrace(client.SessionID)
 }
 
 // handleGraceExpired 유예 시간 안에 재접속하지 않은 세션 정리
 func (h *NCHub) handleGraceExpired(sessionID string) {
-	delete(h.graceTimers, sessionID)
-
-	client := h.sessions[sessionID]
-	if client == nil || client.Connected {
-		// 그 사이 재접속했으면 아무것도 하지 않는다
+	client, ok := h.expire(sessionID)
+	if !ok {
 		return
 	}
-	delete(h.sessions, sessionID)
 
 	game := h.games[client.GameID]
 	if game == nil {
@@ -166,7 +142,7 @@ func (h *NCHub) handleGraceExpired(sessionID string) {
 		})
 		// 상대는 로비로 돌아가도록 세션도 만료 처리
 		h.sendToClient(opponent, NCMessage{Type: NCMsgSessionExpired})
-		delete(h.sessions, opponent.SessionID)
+		h.drop(opponent.SessionID)
 		opponent.GameID = ""
 	}
 
@@ -203,20 +179,13 @@ func (h *NCHub) handleRejoin(client *NCClient, msg NCMessage) {
 
 	game := h.games[old.GameID]
 	if game == nil || !game.Ready {
-		if t := h.graceTimers[payload.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, payload.SessionID)
-		}
-		delete(h.sessions, payload.SessionID)
+		h.drop(payload.SessionID)
 		h.sendToClient(client, NCMessage{Type: NCMsgSessionExpired})
 		return
 	}
 
 	// 유예 타이머 취소
-	if t := h.graceTimers[payload.SessionID]; t != nil {
-		t.Stop()
-		delete(h.graceTimers, payload.SessionID)
-	}
+	h.cancelGrace(payload.SessionID)
 
 	// 옛 연결이 아직 살아있다면 강제 종료 (중복 접속 방지)
 	if old != client && old.Connected {
@@ -309,11 +278,7 @@ func (h *NCHub) clearGameSessions(game *NCGame) {
 		if player == nil {
 			continue
 		}
-		if t := h.graceTimers[player.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, player.SessionID)
-		}
-		delete(h.sessions, player.SessionID)
+		h.drop(player.SessionID)
 	}
 }
 

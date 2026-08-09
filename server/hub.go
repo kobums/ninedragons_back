@@ -24,9 +24,6 @@ type Hub struct {
 	// 대기 중인 게임
 	waitingGame *Game
 
-	// 클라이언트로부터 받은 메시지
-	broadcast chan []byte
-
 	// 클라이언트 등록
 	register chan *Client
 
@@ -36,17 +33,8 @@ type Hub struct {
 	// 게임 메시지
 	gameMessage chan GameMessage
 
-	// 세션 ID → 현재(또는 마지막) 클라이언트
-	sessions map[string]*Client
-
-	// 세션 ID → 재접속 대기 타이머
-	graceTimers map[string]*time.Timer
-
-	// 재접속 대기 시간 만료 알림
-	graceExpired chan string
-
-	// 재접속 대기 시간
-	grace time.Duration
+	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
+	sessionManager[*Client]
 }
 
 type GameMessage struct {
@@ -56,16 +44,12 @@ type GameMessage struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:    make(chan []byte),
-		register:     make(chan *Client),
-		unregister:   make(chan *Client),
-		clients:      make(map[*Client]bool),
-		games:        make(map[string]*Game),
-		gameMessage:  make(chan GameMessage),
-		sessions:     make(map[string]*Client),
-		graceTimers:  make(map[string]*time.Timer),
-		graceExpired: make(chan string),
-		grace:        defaultDisconnectGrace,
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		clients:        make(map[*Client]bool),
+		games:          make(map[string]*Game),
+		gameMessage:    make(chan GameMessage),
+		sessionManager: newSessionManager[*Client](),
 	}
 }
 
@@ -102,13 +86,13 @@ func (h *Hub) handleDisconnect(client *Client) {
 		return
 	}
 	// 이미 새 연결로 교체된 세션의 옛 연결
-	if h.sessions[client.SessionID] != client {
+	if !h.isCurrent(client) {
 		return
 	}
 
 	game := h.games[client.GameID]
 	if game == nil {
-		delete(h.sessions, client.SessionID)
+		h.drop(client.SessionID)
 		return
 	}
 
@@ -118,7 +102,7 @@ func (h *Hub) handleDisconnect(client *Client) {
 		if h.waitingGame != nil && h.waitingGame.ID == game.ID {
 			h.waitingGame = nil
 		}
-		delete(h.sessions, client.SessionID)
+		h.drop(client.SessionID)
 		return
 	}
 
@@ -136,22 +120,15 @@ func (h *Hub) handleDisconnect(client *Client) {
 		})
 	}
 
-	sessionID := client.SessionID
-	h.graceTimers[sessionID] = time.AfterFunc(h.grace, func() {
-		h.graceExpired <- sessionID
-	})
+	h.startGrace(client.SessionID)
 }
 
 // handleGraceExpired 유예 시간 안에 재접속하지 않은 세션 정리
 func (h *Hub) handleGraceExpired(sessionID string) {
-	delete(h.graceTimers, sessionID)
-
-	client := h.sessions[sessionID]
-	if client == nil || client.Connected {
-		// 그 사이 재접속했으면 아무것도 하지 않는다
+	client, ok := h.expire(sessionID)
+	if !ok {
 		return
 	}
-	delete(h.sessions, sessionID)
 
 	game := h.games[client.GameID]
 	if game == nil {
@@ -170,7 +147,7 @@ func (h *Hub) handleGraceExpired(sessionID string) {
 		})
 		// 상대는 로비로 돌아가도록 세션도 만료 처리
 		h.sendToClient(opponent, Message{Type: MsgSessionExpired})
-		delete(h.sessions, opponent.SessionID)
+		h.drop(opponent.SessionID)
 		opponent.GameID = ""
 	}
 
@@ -205,20 +182,13 @@ func (h *Hub) handleRejoin(client *Client, msg Message) {
 
 	game := h.games[old.GameID]
 	if game == nil || !game.Ready {
-		if t := h.graceTimers[payload.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, payload.SessionID)
-		}
-		delete(h.sessions, payload.SessionID)
+		h.drop(payload.SessionID)
 		h.sendToClient(client, Message{Type: MsgSessionExpired})
 		return
 	}
 
 	// 유예 타이머 취소
-	if t := h.graceTimers[payload.SessionID]; t != nil {
-		t.Stop()
-		delete(h.graceTimers, payload.SessionID)
-	}
+	h.cancelGrace(payload.SessionID)
 
 	// 옛 연결이 아직 살아있다면 강제 종료 (중복 접속 방지)
 	if old != client && old.Connected {
@@ -291,11 +261,7 @@ func (h *Hub) clearGameSessions(game *Game) {
 		if player == nil {
 			continue
 		}
-		if t := h.graceTimers[player.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, player.SessionID)
-		}
-		delete(h.sessions, player.SessionID)
+		h.drop(player.SessionID)
 	}
 }
 
