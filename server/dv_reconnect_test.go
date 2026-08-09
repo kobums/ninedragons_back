@@ -1,21 +1,16 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
-// dvTestClient 다빈치코드용 테스트 WS 클라이언트. writePump 가 여러 메시지를
-// 개행으로 묶어 보내므로 큐로 풀어서 읽는다.
+// dvTestClient 공용 testConn 에 게임 메시지 타입의 waitFor 를 얹은 래퍼
 type dvTestClient struct {
-	conn  *websocket.Conn
-	queue []DVMessage
+	testConn[DVMessage]
 }
 
 func newDVTestServer(t *testing.T, grace time.Duration) (*DVHub, string, func()) {
@@ -33,61 +28,18 @@ func newDVTestServer(t *testing.T, grace time.Duration) (*DVHub, string, func())
 
 func dvDial(t *testing.T, url string) *dvTestClient {
 	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("dial failed: %v", err)
-	}
-	return &dvTestClient{conn: conn}
-}
-
-func (c *dvTestClient) send(t *testing.T, msg DVMessage) {
-	t.Helper()
-	if err := c.conn.WriteJSON(msg); err != nil {
-		t.Fatalf("send failed: %v", err)
-	}
+	return &dvTestClient{dialWS[DVMessage](t, url)}
 }
 
 // waitFor 지정한 타입의 메시지가 올 때까지 읽는다 (다른 타입은 건너뜀)
 func (c *dvTestClient) waitFor(t *testing.T, msgType DVMessageType) DVMessage {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(c.queue) == 0 {
-			c.conn.SetReadDeadline(deadline)
-			_, data, err := c.conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("read failed waiting for %s: %v", msgType, err)
-			}
-			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-				if line == "" {
-					continue
-				}
-				var msg DVMessage
-				if err := json.Unmarshal([]byte(line), &msg); err != nil {
-					t.Fatalf("unmarshal failed: %v (%s)", err, line)
-				}
-				c.queue = append(c.queue, msg)
-			}
-		}
-		for len(c.queue) > 0 {
-			msg := c.queue[0]
-			c.queue = c.queue[1:]
-			if msg.Type == msgType {
-				return msg
-			}
-		}
-	}
-	t.Fatalf("timed out waiting for %s", msgType)
-	return DVMessage{}
+	return c.waitMatch(t, string(msgType), func(m DVMessage) bool { return m.Type == msgType })
 }
 
 func dvPayloadMap(t *testing.T, msg DVMessage) map[string]interface{} {
 	t.Helper()
-	m, ok := msg.Payload.(map[string]interface{})
-	if !ok {
-		t.Fatalf("payload is not a map: %#v", msg.Payload)
-	}
-	return m
+	return asPayloadMap(t, msg.Payload)
 }
 
 // joinDVLobby 이름으로 로비에 입장하고 sessionId 를 돌려받는다

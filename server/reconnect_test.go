@@ -1,21 +1,16 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
-// testClient 테스트용 WebSocket 클라이언트
-// writePump는 여러 메시지를 개행으로 묶어 한 프레임에 보낼 수 있으므로 큐로 풀어서 읽는다
+// testClient 공용 testConn 에 게임 메시지 타입의 waitFor 를 얹은 래퍼
 type testClient struct {
-	conn  *websocket.Conn
-	queue []Message
+	testConn[Message]
 }
 
 func newTestServer(t *testing.T, grace time.Duration) (*Hub, string, func()) {
@@ -33,61 +28,18 @@ func newTestServer(t *testing.T, grace time.Duration) (*Hub, string, func()) {
 
 func dial(t *testing.T, url string) *testClient {
 	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("dial failed: %v", err)
-	}
-	return &testClient{conn: conn}
-}
-
-func (c *testClient) send(t *testing.T, msg Message) {
-	t.Helper()
-	if err := c.conn.WriteJSON(msg); err != nil {
-		t.Fatalf("send failed: %v", err)
-	}
+	return &testClient{dialWS[Message](t, url)}
 }
 
 // waitFor 지정한 타입의 메시지가 올 때까지 읽는다 (다른 타입은 건너뜀)
 func (c *testClient) waitFor(t *testing.T, msgType MessageType) Message {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(c.queue) == 0 {
-			c.conn.SetReadDeadline(deadline)
-			_, data, err := c.conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("read failed waiting for %s: %v", msgType, err)
-			}
-			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-				if line == "" {
-					continue
-				}
-				var msg Message
-				if err := json.Unmarshal([]byte(line), &msg); err != nil {
-					t.Fatalf("unmarshal failed: %v (%s)", err, line)
-				}
-				c.queue = append(c.queue, msg)
-			}
-		}
-		for len(c.queue) > 0 {
-			msg := c.queue[0]
-			c.queue = c.queue[1:]
-			if msg.Type == msgType {
-				return msg
-			}
-		}
-	}
-	t.Fatalf("timed out waiting for %s", msgType)
-	return Message{}
+	return c.waitMatch(t, string(msgType), func(m Message) bool { return m.Type == msgType })
 }
 
 func payloadMap(t *testing.T, msg Message) map[string]interface{} {
 	t.Helper()
-	m, ok := msg.Payload.(map[string]interface{})
-	if !ok {
-		t.Fatalf("payload is not a map: %#v", msg.Payload)
-	}
-	return m
+	return asPayloadMap(t, msg.Payload)
 }
 
 // joinTwoPlayers 두 명을 입장시켜 게임을 시작하고 각자의 sessionId를 반환한다

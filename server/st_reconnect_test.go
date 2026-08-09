@@ -1,21 +1,16 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
-// stTestClient 쇼텐토텐용 테스트 WS 클라이언트. writePump 가 여러 메시지를
-// 개행으로 묶어 보내므로 큐로 풀어서 읽는다.
+// stTestClient 공용 testConn 에 게임 메시지 타입의 waitFor 를 얹은 래퍼
 type stTestClient struct {
-	conn  *websocket.Conn
-	queue []STMessage
+	testConn[STMessage]
 }
 
 func newSTTestServer(t *testing.T, grace time.Duration) (*STHub, string, func()) {
@@ -33,61 +28,18 @@ func newSTTestServer(t *testing.T, grace time.Duration) (*STHub, string, func())
 
 func stDial(t *testing.T, url string) *stTestClient {
 	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("dial failed: %v", err)
-	}
-	return &stTestClient{conn: conn}
-}
-
-func (c *stTestClient) send(t *testing.T, msg STMessage) {
-	t.Helper()
-	if err := c.conn.WriteJSON(msg); err != nil {
-		t.Fatalf("send failed: %v", err)
-	}
+	return &stTestClient{dialWS[STMessage](t, url)}
 }
 
 // waitFor 지정한 타입의 메시지가 올 때까지 읽는다 (다른 타입은 건너뜀)
 func (c *stTestClient) waitFor(t *testing.T, msgType STMessageType) STMessage {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(c.queue) == 0 {
-			c.conn.SetReadDeadline(deadline)
-			_, data, err := c.conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("read failed waiting for %s: %v", msgType, err)
-			}
-			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-				if line == "" {
-					continue
-				}
-				var msg STMessage
-				if err := json.Unmarshal([]byte(line), &msg); err != nil {
-					t.Fatalf("unmarshal failed: %v (%s)", err, line)
-				}
-				c.queue = append(c.queue, msg)
-			}
-		}
-		for len(c.queue) > 0 {
-			msg := c.queue[0]
-			c.queue = c.queue[1:]
-			if msg.Type == msgType {
-				return msg
-			}
-		}
-	}
-	t.Fatalf("timed out waiting for %s", msgType)
-	return STMessage{}
+	return c.waitMatch(t, string(msgType), func(m STMessage) bool { return m.Type == msgType })
 }
 
 func stPayloadMap(t *testing.T, msg STMessage) map[string]interface{} {
 	t.Helper()
-	m, ok := msg.Payload.(map[string]interface{})
-	if !ok {
-		t.Fatalf("payload is not a map: %#v", msg.Payload)
-	}
-	return m
+	return asPayloadMap(t, msg.Payload)
 }
 
 // startSTGame 2인 입장 후 게임 시작. 각자의 세션 ID와 첫 game_state 를 반환.
