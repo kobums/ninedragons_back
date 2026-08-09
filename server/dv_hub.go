@@ -37,17 +37,8 @@ type DVHub struct {
 	// 게임 메시지
 	gameMessage chan DVGameMessage
 
-	// 세션 ID → 현재(또는 마지막) 클라이언트
-	sessions map[string]*DVClient
-
-	// 세션 ID → 재접속 대기 타이머
-	graceTimers map[string]*time.Timer
-
-	// 재접속 대기 시간 만료 알림
-	graceExpired chan string
-
-	// 재접속 대기 시간
-	grace time.Duration
+	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
+	sessionManager[*DVClient]
 
 	// 셔플·선공 결정용 난수원 (허브 고루틴에서만 사용)
 	rng *rand.Rand
@@ -60,16 +51,13 @@ type DVGameMessage struct {
 
 func NewDVHub() *DVHub {
 	return &DVHub{
-		register:     make(chan *DVClient),
-		unregister:   make(chan *DVClient),
-		clients:      make(map[*DVClient]bool),
-		rooms:        make(map[string]*dvRoom),
-		gameMessage:  make(chan DVGameMessage),
-		sessions:     make(map[string]*DVClient),
-		graceTimers:  make(map[string]*time.Timer),
-		graceExpired: make(chan string),
-		grace:        defaultDisconnectGrace,
-		rng:          rand.New(rand.NewSource(time.Now().UnixNano())),
+		register:       make(chan *DVClient),
+		unregister:     make(chan *DVClient),
+		clients:        make(map[*DVClient]bool),
+		rooms:          make(map[string]*dvRoom),
+		gameMessage:    make(chan DVGameMessage),
+		sessionManager: newSessionManager[*DVClient](),
+		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -199,7 +187,7 @@ func (h *DVHub) removeFromLobby(room *dvRoom, client *DVClient) {
 	}
 	room.Clients = rebuilt
 
-	delete(h.sessions, client.SessionID)
+	h.drop(client.SessionID)
 	client.GameID = ""
 	client.Seat = -1
 
@@ -628,13 +616,13 @@ func (h *DVHub) handleDisconnect(client *DVClient) {
 		return
 	}
 	// 이미 새 연결로 교체된 세션의 옛 연결
-	if h.sessions[client.SessionID] != client {
+	if !h.isCurrent(client) {
 		return
 	}
 
 	room := h.rooms[client.GameID]
 	if room == nil {
-		delete(h.sessions, client.SessionID)
+		h.drop(client.SessionID)
 		return
 	}
 
@@ -658,23 +646,16 @@ func (h *DVHub) handleDisconnect(client *DVClient) {
 	})
 	h.broadcastState(room)
 
-	sessionID := client.SessionID
-	h.graceTimers[sessionID] = time.AfterFunc(h.grace, func() {
-		h.graceExpired <- sessionID
-	})
+	h.startGrace(client.SessionID)
 }
 
 // handleGraceExpired 유예 안에 재접속하지 않은 플레이어는 몰수 처리하고
 // 게임은 남은 인원으로 계속한다
 func (h *DVHub) handleGraceExpired(sessionID string) {
-	delete(h.graceTimers, sessionID)
-
-	client := h.sessions[sessionID]
-	if client == nil || client.Connected {
-		// 그 사이 재접속했으면 아무것도 하지 않는다
+	client, ok := h.expire(sessionID)
+	if !ok {
 		return
 	}
-	delete(h.sessions, sessionID)
 
 	room := h.rooms[client.GameID]
 	if room == nil || room.Game.Phase == DVPhaseGameOver {
@@ -705,20 +686,13 @@ func (h *DVHub) handleRejoin(client *DVClient, msg DVMessage) {
 
 	room := h.rooms[old.GameID]
 	if room == nil {
-		if t := h.graceTimers[payload.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, payload.SessionID)
-		}
-		delete(h.sessions, payload.SessionID)
+		h.drop(payload.SessionID)
 		h.sendToClient(client, DVMessage{Type: DVMsgSessionExpired})
 		return
 	}
 
 	// 유예 타이머 취소
-	if t := h.graceTimers[payload.SessionID]; t != nil {
-		t.Stop()
-		delete(h.graceTimers, payload.SessionID)
-	}
+	h.cancelGrace(payload.SessionID)
 
 	// 옛 연결이 아직 살아있다면 강제 종료 (중복 접속 방지)
 	if old != client && old.Connected {
@@ -756,11 +730,7 @@ func (h *DVHub) clearGameSessions(room *dvRoom) {
 		if c == nil {
 			continue
 		}
-		if t := h.graceTimers[c.SessionID]; t != nil {
-			t.Stop()
-			delete(h.graceTimers, c.SessionID)
-		}
-		delete(h.sessions, c.SessionID)
+		h.drop(c.SessionID)
 	}
 }
 
