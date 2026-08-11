@@ -15,6 +15,7 @@ func main() {
 	stHub := server.NewSTHub()
 	jhHub := server.NewJHHub()
 	gsHub := server.NewGSHub()
+	qdHub := server.NewQDHub()
 
 	endpoints := []struct {
 		name    string
@@ -34,6 +35,8 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeJHWs(jhHub, w, r) }},
 		{"Geister", "/ws/geister", gsHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeGSWs(gsHub, w, r) }},
+		{"Quoridor", "/ws/quoridor", qdHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeQDWs(qdHub, w, r) }},
 	}
 
 	log.Println("Server starting on :8003")
