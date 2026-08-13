@@ -17,6 +17,7 @@ func main() {
 	gsHub := server.NewGSHub()
 	qdHub := server.NewQDHub()
 	otHub := server.NewOTHub()
+	lcHub := server.NewLCHub()
 
 	endpoints := []struct {
 		name    string
@@ -40,6 +41,8 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeQDWs(qdHub, w, r) }},
 		{"Onitama", "/ws/onitama", otHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeOTWs(otHub, w, r) }},
+		{"Lost Cities", "/ws/lostcities", lcHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeLCWs(lcHub, w, r) }},
 	}
 
 	log.Println("Server starting on :8003")
