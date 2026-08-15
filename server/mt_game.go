@@ -45,6 +45,50 @@ func mtIsScoreCard(card string) bool {
 	return ok && rank >= 10
 }
 
+// mtSuitLabel 사람이 읽는 문양 표기 — 안내·에러·전적 문구용
+func mtSuitLabel(suit string) string {
+	switch suit {
+	case "S":
+		return "♠"
+	case "D":
+		return "♦"
+	case "C":
+		return "♣"
+	case "H":
+		return "♥"
+	case "N":
+		return "노기루"
+	}
+	return suit
+}
+
+// mtRankLabel 사람이 읽는 랭크 표기 (11~14 = J/Q/K/A)
+func mtRankLabel(rank int) string {
+	switch rank {
+	case 11:
+		return "J"
+	case 12:
+		return "Q"
+	case 13:
+		return "K"
+	case 14:
+		return "A"
+	}
+	return fmt.Sprintf("%d", rank)
+}
+
+// mtCardLabel 카드 와이어 코드("S14")를 사람 표기("♠A")로
+func mtCardLabel(card string) string {
+	if card == MTJoker {
+		return "조커"
+	}
+	suit, rank, ok := mtParseCard(card)
+	if !ok {
+		return card
+	}
+	return mtSuitLabel(suit) + mtRankLabel(rank)
+}
+
 // mtMightyCard 마이티 카드. 기루다가 스페이드면 다이아A 로 바뀐다.
 func mtMightyCard(trump string) string {
 	if trump == "S" {
@@ -402,7 +446,7 @@ func (g *MTGame) SubmitKitty(seat int, discard []string, suit string) error {
 		var ok bool
 		hand, ok = mtRemoveCard(hand, card)
 		if !ok {
-			return fmt.Errorf("손에 없는 카드입니다: %s", card)
+			return fmt.Errorf("손에 없는 카드입니다: %s", mtCardLabel(card))
 		}
 	}
 
@@ -486,7 +530,9 @@ func (g *MTGame) Play(seat int, card string, jokerCall bool, jokerSuit string) (
 	isLead := len(g.Trick) == 0
 	legal := mtLegalPlays(hand, isLead, g.LedSuit, g.JokerCallActive, g.Trump)
 	if !mtHandContains(legal, card) {
-		if g.JokerCallActive && card != MTJoker {
+		// 조커 소지자에게만 "조커를 내야 한다"고 안내한다 —
+		// 조커가 없는 사람의 팔로우 위반에 이 문구가 나가면 오도된다
+		if g.JokerCallActive && card != MTJoker && mtHandContains(hand, MTJoker) {
 			return mtPlayStep{}, errors.New("조커콜 — 조커를 내야 합니다")
 		}
 		return mtPlayStep{}, errors.New("리드 문양을 따라야 합니다")

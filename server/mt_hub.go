@@ -560,8 +560,8 @@ func (h *MTHub) finishIfOver(room *mtRoom) {
 	}
 	declNames := strings.Join(result.DeclarerTeam, "·")
 	defNames := strings.Join(result.DefenderTeam, "·")
-	detail := fmt.Sprintf("주공팀(%s) 공약 %s — 주공팀 %d점(키티 %d 포함) vs 수비팀 %d점",
-		outcome, result.Contract.Suit+fmt.Sprint(result.Contract.Count),
+	detail := fmt.Sprintf("주공팀(%s) 공약 %s%d — 주공팀 %d점(키티 %d 포함) vs 수비팀 %d점",
+		outcome, mtSuitLabel(result.Contract.Suit), result.Contract.Count,
 		result.DeclarerPoints, game.KittyPoints, result.DefenderPoints)
 
 	log.Printf("[마이티][경기결과] game=%s | %s | 소요=%s",
