@@ -173,20 +173,11 @@ func TestQDBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// qdBotState 봇이 쓰는 최소 스냅샷
-type qdBotState struct {
-	YourSide    string   `json:"yourSide"`
-	Phase       string   `json:"phase"`
-	CurrentSide string   `json:"currentSide"`
-	LegalMoves  []QDCell `json:"legalMoves"`
-}
-
-// qdBot 내 턴마다 합법 수 중 목표 줄에 가장 가까워지는 칸을 고른다
-// (벽은 놓지 않는다 — 완주 검증이 목적).
+// qdBot 서버 연습봇 두뇌(qdBrain)를 WS 클라이언트로 감싼 완주 봇
 type qdBot struct {
-	conn    *websocket.Conn
-	done    chan<- string
-	counter int
+	conn  *websocket.Conn
+	done  chan<- string
+	brain qdBrain
 }
 
 func (b *qdBot) send(msg QDMessage) {
@@ -194,37 +185,15 @@ func (b *qdBot) send(msg QDMessage) {
 	b.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (b *qdBot) handleState(state qdBotState) {
-	if state.Phase != string(QDPhasePlay) || state.CurrentSide != state.YourSide || len(state.LegalMoves) == 0 {
-		return
+func (b *qdBot) handle(msg QDMessage) {
+	if reply := b.brain.decide(msg); reply != nil {
+		b.send(*reply)
 	}
-	goal := qdGoalRow(QDSide(state.YourSide))
-	b.counter++
-
-	best := state.LegalMoves[b.counter%len(state.LegalMoves)]
-	bestDist := best.Row - goal
-	if bestDist < 0 {
-		bestDist = -bestDist
-	}
-	for _, m := range state.LegalMoves {
-		d := m.Row - goal
-		if d < 0 {
-			d = -d
-		}
-		if d < bestDist {
-			best, bestDist = m, d
-		}
-	}
-	b.send(QDMessage{Type: QDMsgMove, Payload: QDMovePayload{To: best}})
 }
 
 func (b *qdBot) run(initial map[string]interface{}) {
 	if initial != nil {
-		raw, _ := json.Marshal(initial)
-		var state qdBotState
-		if json.Unmarshal(raw, &state) == nil {
-			b.handleState(state)
-		}
+		b.handle(QDMessage{Type: QDMsgGameState, Payload: initial})
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -252,14 +221,7 @@ func (b *qdBot) run(initial map[string]interface{}) {
 				b.done <- over.Winner
 				return
 			}
-			if msg.Type != QDMsgGameState {
-				continue
-			}
-			raw, _ := json.Marshal(msg.Payload)
-			var state qdBotState
-			if json.Unmarshal(raw, &state) == nil {
-				b.handleState(state)
-			}
+			b.handle(msg)
 		}
 	}
 }

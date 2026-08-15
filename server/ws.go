@@ -35,6 +35,7 @@ type wsClient struct {
 	Send      chan []byte
 	GameID    string
 	Connected bool // 각 허브 고루틴에서만 접근
+	Bot       bool // 서버 내장 연습봇 (실제 WS 없음 — ntfy·유예 제외 판단용)
 }
 
 // SessionKey 세션 장부의 키

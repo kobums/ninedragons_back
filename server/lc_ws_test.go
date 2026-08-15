@@ -194,21 +194,11 @@ func TestLCBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// lcBotState 봇이 쓰는 최소 스냅샷
-type lcBotState struct {
-	YourSide         string               `json:"yourSide"`
-	Phase            string               `json:"phase"`
-	CurrentSide      string               `json:"currentSide"`
-	YourHand         []LCCard             `json:"yourHand"`
-	SouthExpeditions map[LCColor][]LCCard `json:"southExpeditions"`
-	NorthExpeditions map[LCColor][]LCCard `json:"northExpeditions"`
-}
-
-// lcBot 내 턴마다 놓을 수 있는 카드가 있으면 놓고, 없으면 첫 카드를 버린다.
-// 항상 덱에서 뽑아 덱 소진(게임 종료)을 보장한다.
+// lcBot 서버 연습봇 두뇌(lcBrain)를 WS 클라이언트로 감싼 완주 봇
 type lcBot struct {
-	conn *websocket.Conn
-	done chan<- bool
+	conn  *websocket.Conn
+	done  chan<- bool
+	brain lcBrain
 }
 
 func (b *lcBot) send(msg LCMessage) {
@@ -216,44 +206,15 @@ func (b *lcBot) send(msg LCMessage) {
 	b.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (b *lcBot) handleState(state lcBotState) {
-	if state.Phase != string(LCPhasePlay) || state.CurrentSide != state.YourSide || len(state.YourHand) == 0 {
-		return
+func (b *lcBot) handle(msg LCMessage) {
+	if reply := b.brain.decide(msg); reply != nil {
+		b.send(*reply)
 	}
-
-	mine := state.SouthExpeditions
-	if state.YourSide == string(LCNorth) {
-		mine = state.NorthExpeditions
-	}
-
-	// 오름차순으로 놓을 수 있는 카드 탐색 (서버 canPlay 미러)
-	for _, card := range state.YourHand {
-		pile := mine[card.Color]
-		ok := true
-		for _, c := range pile {
-			if card.Value == LCWagerValue {
-				if c.Value != LCWagerValue {
-					ok = false
-				}
-			} else if c.Value != LCWagerValue && c.Value >= card.Value {
-				ok = false
-			}
-		}
-		if ok {
-			b.send(LCMessage{Type: LCMsgMove, Payload: LCMovePayload{CardID: card.ID, Action: "play", Draw: "deck"}})
-			return
-		}
-	}
-	b.send(LCMessage{Type: LCMsgMove, Payload: LCMovePayload{CardID: state.YourHand[0].ID, Action: "discard", Draw: "deck"}})
 }
 
 func (b *lcBot) run(initial map[string]interface{}) {
 	if initial != nil {
-		raw, _ := json.Marshal(initial)
-		var state lcBotState
-		if json.Unmarshal(raw, &state) == nil {
-			b.handleState(state)
-		}
+		b.handle(LCMessage{Type: LCMsgGameState, Payload: initial})
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -276,14 +237,7 @@ func (b *lcBot) run(initial map[string]interface{}) {
 				b.done <- true
 				return
 			}
-			if msg.Type != LCMsgGameState {
-				continue
-			}
-			raw, _ := json.Marshal(msg.Payload)
-			var state lcBotState
-			if json.Unmarshal(raw, &state) == nil {
-				b.handleState(state)
-			}
+			b.handle(msg)
 		}
 	}
 }

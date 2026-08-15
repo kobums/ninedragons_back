@@ -177,22 +177,11 @@ func TestCSBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// csBotState 봇이 쓰는 최소 스냅샷
-type csBotState struct {
-	YourSide    string         `json:"yourSide"`
-	Phase       string         `json:"phase"`
-	CurrentSide string         `json:"currentSide"`
-	Temp        map[string]int `json:"temp"`
-	Options     []CSOption     `json:"options"`
-	CanRoll     bool           `json:"canRoll"`
-	CanStop     bool           `json:"canStop"`
-}
-
-// csBot 조합 대기면 첫 옵션을 고르고, 아니면 "마커 3개를 다 썼거나
-// 임시 마커가 꼭대기에 닿았으면 정지, 그 외엔 굴림" 전략.
+// csBot 서버 연습봇 두뇌(csBrain)를 WS 클라이언트로 감싼 완주 봇
 type csBot struct {
-	conn *websocket.Conn
-	done chan<- string
+	conn  *websocket.Conn
+	done  chan<- string
+	brain csBrain
 }
 
 func (b *csBot) send(msg CSMessage) {
@@ -200,43 +189,15 @@ func (b *csBot) send(msg CSMessage) {
 	b.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (b *csBot) handleState(state csBotState) {
-	if state.Phase != string(CSPhasePlay) || state.CurrentSide != state.YourSide {
-		return
-	}
-
-	if len(state.Options) > 0 {
-		b.send(CSMessage{Type: CSMsgChoose, Payload: CSChoosePayload{Sums: state.Options[0].Sums}})
-		return
-	}
-	if state.CanStop {
-		atTop := false
-		for colStr, pos := range state.Temp {
-			col := 0
-			for _, ch := range colStr {
-				col = col*10 + int(ch-'0')
-			}
-			if pos >= csColLen(col) {
-				atTop = true
-			}
-		}
-		if atTop || len(state.Temp) >= CSMarkerMax {
-			b.send(CSMessage{Type: CSMsgStop})
-			return
-		}
-	}
-	if state.CanRoll {
-		b.send(CSMessage{Type: CSMsgRoll})
+func (b *csBot) handle(msg CSMessage) {
+	if reply := b.brain.decide(msg); reply != nil {
+		b.send(*reply)
 	}
 }
 
 func (b *csBot) run(initial map[string]interface{}) {
 	if initial != nil {
-		raw, _ := json.Marshal(initial)
-		var state csBotState
-		if json.Unmarshal(raw, &state) == nil {
-			b.handleState(state)
-		}
+		b.handle(CSMessage{Type: CSMsgGameState, Payload: initial})
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -264,14 +225,7 @@ func (b *csBot) run(initial map[string]interface{}) {
 				b.done <- over.Winner
 				return
 			}
-			if msg.Type != CSMsgGameState {
-				continue
-			}
-			raw, _ := json.Marshal(msg.Payload)
-			var state csBotState
-			if json.Unmarshal(raw, &state) == nil {
-				b.handleState(state)
-			}
+			b.handle(msg)
 		}
 	}
 }

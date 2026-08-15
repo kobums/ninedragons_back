@@ -193,23 +193,11 @@ func TestOTBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// otBotState 봇이 쓰는 최소 스냅샷
-type otBotState struct {
-	YourSide    string        `json:"yourSide"`
-	Phase       string        `json:"phase"`
-	CurrentSide string        `json:"currentSide"`
-	Pieces      []OTPiece     `json:"pieces"`
-	Hands       []string      `json:"southHand"`
-	NorthHand   []string      `json:"northHand"`
-	LegalMoves  []OTLegalMove `json:"legalMoves"`
-}
-
-// otBot 내 턴마다 합법 수를 하나 둔다. 승리 수(마스터 잡기·사원 도달)와
-// 잡기 수를 우선해 무한 순환을 피한다. 수가 없으면 첫 카드로 패스.
+// otBot 서버 연습봇 두뇌(otBrain)를 WS 클라이언트로 감싼 완주 봇
 type otBot struct {
-	conn    *websocket.Conn
-	done    chan<- string
-	counter int
+	conn  *websocket.Conn
+	done  chan<- string
+	brain otBrain
 }
 
 func (b *otBot) send(msg OTMessage) {
@@ -217,54 +205,15 @@ func (b *otBot) send(msg OTMessage) {
 	b.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (b *otBot) handleState(state otBotState) {
-	if state.Phase != string(OTPhasePlay) || state.CurrentSide != state.YourSide {
-		return
+func (b *otBot) handle(msg OTMessage) {
+	if reply := b.brain.decide(msg); reply != nil {
+		b.send(*reply)
 	}
-	b.counter++
-
-	if len(state.LegalMoves) == 0 {
-		hand := state.Hands
-		if state.YourSide == string(OTNorth) {
-			hand = state.NorthHand
-		}
-		if len(hand) > 0 {
-			b.send(OTMessage{Type: OTMsgPass, Payload: OTPassPayload{Card: hand[0]}})
-		}
-		return
-	}
-
-	mySide := OTSide(state.YourSide)
-	temple := otTemple(otOther(mySide))
-	pieceBy := map[OTCell]OTPiece{}
-	for _, p := range state.Pieces {
-		pieceBy[OTCell{p.Row, p.Col}] = p
-	}
-
-	pick := state.LegalMoves[b.counter%len(state.LegalMoves)]
-	for _, m := range state.LegalMoves {
-		target, occupied := pieceBy[m.To]
-		mover := pieceBy[m.From]
-		// 승리 수 최우선
-		if (occupied && target.Master) || (mover.Master && m.To == temple) {
-			pick = m
-			break
-		}
-		// 잡기 수 차선
-		if occupied && target.Side != mySide {
-			pick = m
-		}
-	}
-	b.send(OTMessage{Type: OTMsgMove, Payload: OTMovePayload{Card: pick.Card, From: pick.From, To: pick.To}})
 }
 
 func (b *otBot) run(initial map[string]interface{}) {
 	if initial != nil {
-		raw, _ := json.Marshal(initial)
-		var state otBotState
-		if json.Unmarshal(raw, &state) == nil {
-			b.handleState(state)
-		}
+		b.handle(OTMessage{Type: OTMsgGameState, Payload: initial})
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -292,14 +241,7 @@ func (b *otBot) run(initial map[string]interface{}) {
 				b.done <- over.Winner
 				return
 			}
-			if msg.Type != OTMsgGameState {
-				continue
-			}
-			raw, _ := json.Marshal(msg.Payload)
-			var state otBotState
-			if json.Unmarshal(raw, &state) == nil {
-				b.handleState(state)
-			}
+			b.handle(msg)
 		}
 	}
 }

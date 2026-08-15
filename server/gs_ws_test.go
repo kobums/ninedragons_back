@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -191,7 +192,7 @@ func TestGSBotsCompleteGame(t *testing.T) {
 
 	done := make(chan string, 2)
 	for i, c := range clients {
-		bot := &gsBot{conn: c.conn, done: done}
+		bot := &gsBot{conn: c.conn, done: done, brain: newGSBrain(rand.New(rand.NewSource(int64(i) + 1)))}
 		go bot.run(states[i])
 	}
 
@@ -205,25 +206,11 @@ func TestGSBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// gsBotState 봇이 쓰는 최소 스냅샷
-type gsBotState struct {
-	YourSide    string `json:"yourSide"`
-	Phase       string `json:"phase"`
-	CurrentSide string `json:"currentSide"`
-	Ghosts      []struct {
-		Side string `json:"side"`
-		Row  int    `json:"row"`
-		Col  int    `json:"col"`
-		Good *bool  `json:"good"`
-	} `json:"ghosts"`
-}
-
-// gsBot 상태를 받을 때마다 내 턴이면 합법 수 하나를 둔다. 탈출 가능하면
-// 탈출, 아니면 유령·방향을 카운터로 회전시키며 골라 왕복 교착을 피한다.
+// gsBot 서버 연습봇 두뇌(gsBrain)를 WS 클라이언트로 감싼 완주 봇
 type gsBot struct {
-	conn    *websocket.Conn
-	done    chan<- string
-	counter int
+	conn  *websocket.Conn
+	done  chan<- string
+	brain *gsBrain
 }
 
 func (b *gsBot) send(msg GSMessage) {
@@ -231,57 +218,15 @@ func (b *gsBot) send(msg GSMessage) {
 	b.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (b *gsBot) handleState(state gsBotState) {
-	if state.Phase != string(GSPhasePlay) || state.CurrentSide != state.YourSide {
-		return
-	}
-
-	occupied := map[GSCell]string{}
-	mine := []int{}
-	for i, ghost := range state.Ghosts {
-		occupied[GSCell{ghost.Row, ghost.Col}] = ghost.Side
-		if ghost.Side == state.YourSide {
-			mine = append(mine, i)
-		}
-	}
-	mySide := GSSide(state.YourSide)
-	b.counter++
-
-	// 탈출 가능하면 즉시 탈출
-	for _, idx := range mine {
-		ghost := state.Ghosts[idx]
-		if ghost.Good != nil && *ghost.Good && gsIsExit(mySide, ghost.Row, ghost.Col) {
-			b.send(GSMessage{Type: GSMsgMove, Payload: GSMovePayload{From: GSCell{ghost.Row, ghost.Col}, Escape: true}})
-			return
-		}
-	}
-
-	dirs := [][2]int{{-1, 0}, {0, -1}, {0, 1}, {1, 0}}
-	for i := range mine {
-		ghost := state.Ghosts[mine[(b.counter+i)%len(mine)]]
-		from := GSCell{ghost.Row, ghost.Col}
-		for j := range dirs {
-			d := dirs[(b.counter+j)%len(dirs)]
-			to := GSCell{ghost.Row + d[0], ghost.Col + d[1]}
-			if to.Row < 0 || to.Row >= GSBoardSize || to.Col < 0 || to.Col >= GSBoardSize {
-				continue
-			}
-			if occupied[to] == state.YourSide {
-				continue
-			}
-			b.send(GSMessage{Type: GSMsgMove, Payload: GSMovePayload{From: from, To: to}})
-			return
-		}
+func (b *gsBot) handle(msg GSMessage) {
+	if reply := b.brain.decide(msg); reply != nil {
+		b.send(*reply)
 	}
 }
 
 func (b *gsBot) run(initial map[string]interface{}) {
 	if initial != nil {
-		raw, _ := json.Marshal(initial)
-		var state gsBotState
-		if json.Unmarshal(raw, &state) == nil {
-			b.handleState(state)
-		}
+		b.handle(GSMessage{Type: GSMsgGameState, Payload: initial})
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -309,14 +254,7 @@ func (b *gsBot) run(initial map[string]interface{}) {
 				b.done <- over.Winner
 				return
 			}
-			if msg.Type != GSMsgGameState {
-				continue
-			}
-			raw, _ := json.Marshal(msg.Payload)
-			var state gsBotState
-			if json.Unmarshal(raw, &state) == nil {
-				b.handleState(state)
-			}
+			b.handle(msg)
 		}
 	}
 }
