@@ -14,15 +14,21 @@ import (
 // defaultDisconnectGrace 연결이 끊긴 플레이어의 재접속 대기 시간 기본값
 const defaultDisconnectGrace = 90 * time.Second
 
+// ndRoom 게임(순수 상태)과 색상별 연결의 매핑
+type ndRoom struct {
+	Game    *Game
+	Clients map[PlayerColor]*Client
+}
+
 type Hub struct {
 	// 등록된 클라이언트
 	clients map[*Client]bool
 
-	// 게임 목록
-	games map[string]*Game
+	// 진행/대기 중인 방 (gameID → room)
+	rooms map[string]*ndRoom
 
-	// 대기 중인 게임
-	waitingGame *Game
+	// 상대를 기다리는 방
+	waitingRoom *ndRoom
 
 	// 클라이언트 등록
 	register chan *Client
@@ -47,7 +53,7 @@ func NewHub() *Hub {
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		clients:        make(map[*Client]bool),
-		games:          make(map[string]*Game),
+		rooms:          make(map[string]*ndRoom),
 		gameMessage:    make(chan GameMessage),
 		sessionManager: newSessionManager[*Client](),
 	}
@@ -90,17 +96,17 @@ func (h *Hub) handleDisconnect(client *Client) {
 		return
 	}
 
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		h.drop(client.SessionID)
 		return
 	}
 
 	// 상대를 기다리던 게임은 유지할 이유가 없으니 즉시 정리
-	if !game.Ready {
-		delete(h.games, game.ID)
-		if h.waitingGame != nil && h.waitingGame.ID == game.ID {
-			h.waitingGame = nil
+	if !room.Game.Ready {
+		delete(h.rooms, room.Game.ID)
+		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
+			h.waitingRoom = nil
 		}
 		h.drop(client.SessionID)
 		return
@@ -108,9 +114,9 @@ func (h *Hub) handleDisconnect(client *Client) {
 
 	// 진행 중인 게임: 유예 시간 동안 세션을 유지하고 재접속을 기다린다
 	log.Printf("[구룡투][연결끊김] game=%s | %s=%s 재접속 대기 시작 (%.0f초)",
-		game.ID, colorLabel(client.Color), displayName(client.Name), h.grace.Seconds())
+		room.Game.ID, colorLabel(client.Color), displayName(client.Name), h.grace.Seconds())
 
-	if opponent := h.opponentOf(game, client.Color); opponent != nil {
+	if opponent := h.opponentOf(room, client.Color); opponent != nil {
 		h.sendToClient(opponent, Message{
 			Type: MsgOpponentDisconnected,
 			Payload: OpponentDisconnectedPayload{
@@ -130,15 +136,15 @@ func (h *Hub) handleGraceExpired(sessionID string) {
 		return
 	}
 
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		return
 	}
 
 	log.Printf("[구룡투][재접속실패] game=%s | %s=%s 유예 시간 만료로 게임 종료",
-		game.ID, colorLabel(client.Color), displayName(client.Name))
+		room.Game.ID, colorLabel(client.Color), displayName(client.Name))
 
-	if opponent := h.opponentOf(game, client.Color); opponent != nil {
+	if opponent := h.opponentOf(room, client.Color); opponent != nil {
 		h.sendToClient(opponent, Message{
 			Type: MsgError,
 			Payload: ErrorPayload{
@@ -151,9 +157,9 @@ func (h *Hub) handleGraceExpired(sessionID string) {
 		opponent.GameID = ""
 	}
 
-	delete(h.games, game.ID)
-	if h.waitingGame != nil && h.waitingGame.ID == game.ID {
-		h.waitingGame = nil
+	delete(h.rooms, room.Game.ID)
+	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
+		h.waitingRoom = nil
 	}
 }
 
@@ -180,8 +186,8 @@ func (h *Hub) handleRejoin(client *Client, msg Message) {
 		return
 	}
 
-	game := h.games[old.GameID]
-	if game == nil || !game.Ready {
+	room := h.rooms[old.GameID]
+	if room == nil || !room.Game.Ready {
 		h.drop(payload.SessionID)
 		h.sendToClient(client, Message{Type: MsgSessionExpired})
 		return
@@ -201,29 +207,30 @@ func (h *Hub) handleRejoin(client *Client, msg Message) {
 	client.GameID = old.GameID
 	client.Color = old.Color
 	h.sessions[client.SessionID] = client
-	game.Players[client.Color] = client
+	room.Clients[client.Color] = client
 
 	log.Printf("[구룡투][재접속] game=%s | %s=%s 재접속 완료",
-		game.ID, colorLabel(client.Color), displayName(client.Name))
+		room.Game.ID, colorLabel(client.Color), displayName(client.Name))
 
-	if opponent := h.opponentOf(game, client.Color); opponent != nil {
+	if opponent := h.opponentOf(room, client.Color); opponent != nil {
 		h.sendToClient(opponent, Message{Type: MsgOpponentReconnected})
 	}
 
 	// 현재 게임 상태 전체를 내려서 클라이언트 상태를 복원시킨다
 	h.sendToClient(client, Message{
 		Type:    MsgGameState,
-		Payload: h.buildGameState(game, client.Color),
+		Payload: h.buildGameState(room, client.Color),
 	})
 }
 
 // buildGameState 재접속 복원용 게임 상태 스냅샷
-func (h *Hub) buildGameState(game *Game, yourColor PlayerColor) GameStatePayload {
-	blueName := clientName(game.Players[Blue])
-	redName := clientName(game.Players[Red])
+func (h *Hub) buildGameState(room *ndRoom, yourColor PlayerColor) GameStatePayload {
+	game := room.Game
+	blueName := game.Names[Blue]
+	redName := game.Names[Red]
 
 	opponentConnected := false
-	if opponent := h.opponentOf(game, yourColor); opponent != nil && opponent.Connected {
+	if opponent := h.opponentOf(room, yourColor); opponent != nil && opponent.Connected {
 		opponentConnected = true
 	}
 
@@ -245,9 +252,9 @@ func (h *Hub) buildGameState(game *Game, yourColor PlayerColor) GameStatePayload
 	}
 }
 
-// opponentOf 게임에서 해당 색상의 상대 플레이어
-func (h *Hub) opponentOf(game *Game, color PlayerColor) *Client {
-	for c, player := range game.Players {
+// opponentOf 방에서 해당 색상의 상대 플레이어
+func (h *Hub) opponentOf(room *ndRoom, color PlayerColor) *Client {
+	for c, player := range room.Clients {
 		if c != color {
 			return player
 		}
@@ -256,8 +263,8 @@ func (h *Hub) opponentOf(game *Game, color PlayerColor) *Client {
 }
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
-func (h *Hub) clearGameSessions(game *Game) {
-	for _, player := range game.Players {
+func (h *Hub) clearGameSessions(room *ndRoom) {
+	for _, player := range room.Clients {
 		if player == nil {
 			continue
 		}
@@ -283,27 +290,28 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
-	var game *Game
+	var room *ndRoom
 
 	// 대기 중인 게임이 있으면 참가, 없으면 새로 생성
-	if h.waitingGame == nil {
-		game = NewGame()
-		h.waitingGame = game
-		h.games[game.ID] = game
-		log.Printf("Created new game %s", game.ID)
+	if h.waitingRoom == nil {
+		room = &ndRoom{Game: NewGame(), Clients: map[PlayerColor]*Client{}}
+		h.waitingRoom = room
+		h.rooms[room.Game.ID] = room
+		log.Printf("Created new game %s", room.Game.ID)
 	} else {
-		game = h.waitingGame
-		h.waitingGame = nil // 게임이 가득 찼으므로 대기 게임 초기화
-		log.Printf("Joining existing game %s", game.ID)
+		room = h.waitingRoom
+		h.waitingRoom = nil // 게임이 가득 찼으므로 대기 게임 초기화
+		log.Printf("Joining existing game %s", room.Game.ID)
 	}
 
+	game := room.Game
 	client.GameID = game.ID
 
 	// 플레이어 색상 결정
 	var color PlayerColor
 
 	// 첫 번째 플레이어인 경우
-	if len(game.Players) == 0 {
+	if len(room.Clients) == 0 {
 		// 색상을 선택했으면 그 색상, 아니면 파랑
 		if payload.Color == Blue || payload.Color == Red {
 			color = payload.Color
@@ -312,9 +320,9 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 		}
 	} else {
 		// 두 번째 플레이어인 경우 남은 색상 자동 배정
-		if game.Players[Blue] == nil {
+		if room.Clients[Blue] == nil {
 			color = Blue
-		} else if game.Players[Red] == nil {
+		} else if room.Clients[Red] == nil {
 			color = Red
 		} else {
 			h.sendToClient(client, Message{
@@ -328,7 +336,7 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	}
 
 	// 플레이어 추가
-	if err := game.AddPlayer(client, color); err != nil {
+	if err := game.AddPlayer(client.Name, color); err != nil {
 		log.Printf("Error adding player: %v", err)
 		h.sendToClient(client, Message{
 			Type: MsgError,
@@ -338,12 +346,14 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 		})
 		return
 	}
+	client.Color = color
+	room.Clients[color] = client
 
 	log.Printf("[구룡투][입장] game=%s | %s=%s 게임 입장 (%d/2)",
-		game.ID, colorLabel(color), displayName(client.Name), len(game.Players))
+		game.ID, colorLabel(color), displayName(client.Name), len(room.Clients))
 
 	notify("구룡투 참가", fmt.Sprintf("%s(%s) 입장 (%d/2)",
-		displayName(client.Name), colorLabel(color), len(game.Players)))
+		displayName(client.Name), colorLabel(color), len(room.Clients)))
 
 	// 플레이어에게 자신의 색상 알림
 	h.sendToClient(client, Message{
@@ -357,17 +367,11 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 
 	// 게임 시작 확인
 	if game.Ready {
-		log.Printf("Game %s is ready! Starting game with %d players", game.ID, len(game.Players))
+		log.Printf("Game %s is ready! Starting game with %d players", game.ID, len(room.Clients))
 
 		// 플레이어 이름 가져오기
-		blueName := ""
-		redName := ""
-		if p := game.Players[Blue]; p != nil {
-			blueName = p.Name
-		}
-		if p := game.Players[Red]; p != nil {
-			redName = p.Name
-		}
+		blueName := game.Names[Blue]
+		redName := game.Names[Red]
 
 		// 경기 시작 로그 (닉네임)
 		game.StartedAt = time.Now()
@@ -378,7 +382,7 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 			displayName(blueName), displayName(redName)))
 
 		// 두 플레이어 모두에게 게임 시작 알림
-		for playerColor, player := range game.Players {
+		for playerColor, player := range room.Clients {
 			h.sendToClient(player, Message{
 				Type: MsgGameStart,
 				Payload: GameStartPayload{
@@ -390,7 +394,7 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 			})
 		}
 	} else {
-		log.Printf("Game %s waiting for more players. Current: %d", game.ID, len(game.Players))
+		log.Printf("Game %s waiting for more players. Current: %d", game.ID, len(room.Clients))
 		// 대기 중 메시지
 		h.sendToClient(client, Message{
 			Type: MsgWaitingPlayer,
@@ -402,8 +406,8 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 }
 
 func (h *Hub) handlePlayTile(client *Client, msg Message) {
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		h.sendToClient(client, Message{
 			Type: MsgError,
 			Payload: ErrorPayload{
@@ -412,6 +416,7 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 		})
 		return
 	}
+	game := room.Game
 
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload PlayTilePayload
@@ -434,7 +439,7 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 	nextPlayer := game.GetNextPlayer()
 
 	// 모든 플레이어에게 타일이 플레이되었음을 알림
-	h.broadcastToGame(game, Message{
+	h.broadcastToRoom(room, Message{
 		Type: MsgTilePlayed,
 		Payload: TilePlayedPayload{
 			Color:          client.Color,
@@ -478,7 +483,7 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 		log.Printf("Broadcasting round_result: Round %d, Blue: %d, Red: %d, Winner: %s, Next player: %s",
 			result.Round, result.BlueTile, result.RedTile, result.Winner, result.NextPlayer)
 
-		h.broadcastToGame(game, Message{
+		h.broadcastToRoom(room, Message{
 			Type:    MsgRoundResult,
 			Payload: result,
 		})
@@ -486,7 +491,7 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 		// 게임 종료 확인
 		isOver, finalWinner := game.IsGameOver()
 		if isOver {
-			h.broadcastToGame(game, Message{
+			h.broadcastToRoom(room, Message{
 				Type: MsgGameOver,
 				Payload: GameOverPayload{
 					Winner:   finalWinner,
@@ -499,16 +504,16 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 			h.logMatchResult(game, finalWinner)
 
 			// 게임 종료 처리
-			h.clearGameSessions(game)
-			delete(h.games, game.ID)
+			h.clearGameSessions(room)
+			delete(h.rooms, game.ID)
 		}
 	}
 }
 
 // logMatchResult 경기 종료 결과 로그 (닉네임, 점수, 라운드, 소요 시간)
 func (h *Hub) logMatchResult(game *Game, winner PlayerColor) {
-	blueName := displayName(clientName(game.Players[Blue]))
-	redName := displayName(clientName(game.Players[Red]))
+	blueName := displayName(game.Names[Blue])
+	redName := displayName(game.Names[Red])
 
 	result := "무승부"
 	switch winner {
@@ -532,14 +537,6 @@ func colorLabel(color PlayerColor) string {
 		return "빨강"
 	}
 	return string(color)
-}
-
-// clientName 클라이언트 이름 (nil 안전)
-func clientName(client *Client) string {
-	if client == nil {
-		return ""
-	}
-	return client.Name
 }
 
 // maxLoggedNameLen 로그에 남길 닉네임 최대 길이
@@ -581,8 +578,8 @@ func (h *Hub) sendToClient(client *Client, message Message) {
 	sendTo(&client.wsClient, message, "")
 }
 
-func (h *Hub) broadcastToGame(game *Game, message Message) {
-	for _, player := range game.Players {
+func (h *Hub) broadcastToRoom(room *ndRoom, message Message) {
+	for _, player := range room.Clients {
 		if player != nil {
 			h.sendToClient(player, message)
 		}

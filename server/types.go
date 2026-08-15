@@ -42,10 +42,10 @@ type Client struct {
 	Color PlayerColor
 }
 
-// Game 구조체
+// Game 구조체 (순수 상태 — 연결은 ndRoom 이 든다)
 type Game struct {
 	ID            string
-	Players       map[PlayerColor]*Client
+	Names         map[PlayerColor]string
 	CurrentRound  int
 	BlueWins      int
 	RedWins       int

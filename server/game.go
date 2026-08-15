@@ -10,7 +10,7 @@ import (
 func NewGame() *Game {
 	return &Game{
 		ID:            uuid.New().String(),
-		Players:       make(map[PlayerColor]*Client),
+		Names:         make(map[PlayerColor]string),
 		CurrentRound:  1,
 		BlueWins:      0,
 		RedWins:       0,
@@ -22,16 +22,15 @@ func NewGame() *Game {
 }
 
 // AddPlayer 플레이어 추가
-func (g *Game) AddPlayer(client *Client, color PlayerColor) error {
-	if g.Players[color] != nil {
+func (g *Game) AddPlayer(name string, color PlayerColor) error {
+	if _, taken := g.Names[color]; taken {
 		return errors.New("이미 해당 색상의 플레이어가 존재합니다")
 	}
 
-	g.Players[color] = client
-	client.Color = color
+	g.Names[color] = name
 
 	// 두 플레이어가 모두 접속하면 게임 시작
-	if len(g.Players) == 2 {
+	if len(g.Names) == 2 {
 		g.Ready = true
 		g.UsedTiles[Blue] = []int{}
 		g.UsedTiles[Red] = []int{}
