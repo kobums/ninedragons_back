@@ -165,11 +165,13 @@ func (h *QDHub) handleJoinGame(client *QDClient, msg QDMessage) {
 		game := NewQDGame(uuid.New().String())
 		room = &qdRoom{Game: game, Clients: map[QDSide]*QDClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("quoridor", true)
 		h.rooms[game.ID] = room
 		log.Printf("[QD] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("quoridor", false)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -477,6 +479,7 @@ func (h *QDHub) handleDisconnect(client *QDClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("quoridor", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -528,6 +531,7 @@ func (h *QDHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("quoridor", false)
 	}
 }
 

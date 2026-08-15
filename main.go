@@ -56,6 +56,7 @@ func main() {
 	}
 	server.InitStats(statsPath)
 	http.HandleFunc("/stats", server.StatsHandler)
+	http.HandleFunc("/lobby", server.LobbyHandler)
 
 	log.Println("Server starting on :8003")
 	for _, ep := range endpoints {

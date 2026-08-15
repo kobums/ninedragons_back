@@ -165,11 +165,13 @@ func (h *OTHub) handleJoinGame(client *OTClient, msg OTMessage) {
 		game := NewOTGame(uuid.New().String())
 		room = &otRoom{Game: game, Clients: map[OTSide]*OTClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("onitama", true)
 		h.rooms[game.ID] = room
 		log.Printf("[OT] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("onitama", false)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -492,6 +494,7 @@ func (h *OTHub) handleDisconnect(client *OTClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("onitama", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -543,6 +546,7 @@ func (h *OTHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("onitama", false)
 	}
 }
 

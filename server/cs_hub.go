@@ -167,11 +167,13 @@ func (h *CSHub) handleJoinGame(client *CSClient, msg CSMessage) {
 		game := NewCSGame(uuid.New().String())
 		room = &csRoom{Game: game, Clients: map[CSSide]*CSClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("cantstop", true)
 		h.rooms[game.ID] = room
 		log.Printf("[CS] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("cantstop", false)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -495,6 +497,7 @@ func (h *CSHub) handleDisconnect(client *CSClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("cantstop", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -546,6 +549,7 @@ func (h *CSHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("cantstop", false)
 	}
 }
 

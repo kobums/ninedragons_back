@@ -136,11 +136,13 @@ func (h *STHub) handleJoinGame(client *STClient, msg STMessage) {
 		game := NewSTGame(uuid.New().String(), tacticMode)
 		room = &stRoom{Game: game, Clients: map[STSide]*STClient{}}
 		h.waitingRooms[tacticMode] = room
+		lobbySetWaiting("schottentotten", true)
 		h.rooms[game.ID] = room
 		log.Printf("[ST] Created new game %s (tactic=%v)", game.ID, tacticMode)
 	} else {
 		room = h.waitingRooms[tacticMode]
 		delete(h.waitingRooms, tacticMode)
+		lobbySetWaiting("schottentotten", stAnyWaiting(h))
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -597,6 +599,7 @@ func (h *STHub) clearWaiting(room *stRoom) {
 			delete(h.waitingRooms, mode)
 		}
 	}
+	lobbySetWaiting("schottentotten", stAnyWaiting(h))
 }
 
 // handleRejoin 세션 ID로 기존 게임에 재접속
@@ -703,4 +706,14 @@ func (h *STHub) broadcastToRoom(room *stRoom, message STMessage) {
 			h.sendToClient(c, message)
 		}
 	}
+}
+
+// stAnyWaiting 어느 모드든 대기자가 있는지
+func stAnyWaiting(h *STHub) bool {
+	for _, waiting := range h.waitingRooms {
+		if waiting != nil {
+			return true
+		}
+	}
+	return false
 }

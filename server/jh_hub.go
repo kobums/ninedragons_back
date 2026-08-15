@@ -127,11 +127,13 @@ func (h *JHHub) handleJoinGame(client *JHClient, msg JHMessage) {
 		game := NewJHGame(uuid.New().String())
 		room = &jhRoom{Game: game, Clients: map[JHRole]*JHClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("jekyllhyde", true)
 		h.rooms[game.ID] = room
 		log.Printf("[JH] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("jekyllhyde", false)
 	}
 
 	role, err := room.Game.AddPlayer(client.Name)
@@ -441,6 +443,7 @@ func (h *JHHub) handleDisconnect(client *JHClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("jekyllhyde", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -494,6 +497,7 @@ func (h *JHHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("jekyllhyde", false)
 	}
 }
 

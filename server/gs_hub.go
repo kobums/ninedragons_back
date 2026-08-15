@@ -166,11 +166,13 @@ func (h *GSHub) handleJoinGame(client *GSClient, msg GSMessage) {
 		game := NewGSGame(uuid.New().String())
 		room = &gsRoom{Game: game, Clients: map[GSSide]*GSClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("geister", true)
 		h.rooms[game.ID] = room
 		log.Printf("[GS] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("geister", false)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -516,6 +518,7 @@ func (h *GSHub) handleDisconnect(client *GSClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("geister", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -567,6 +570,7 @@ func (h *GSHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("geister", false)
 	}
 }
 

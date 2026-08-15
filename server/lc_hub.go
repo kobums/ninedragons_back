@@ -163,11 +163,13 @@ func (h *LCHub) handleJoinGame(client *LCClient, msg LCMessage) {
 		game := NewLCGame(uuid.New().String())
 		room = &lcRoom{Game: game, Clients: map[LCSide]*LCClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("lostcities", true)
 		h.rooms[game.ID] = room
 		log.Printf("[LC] Created new game %s", game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil
+		lobbySetWaiting("lostcities", false)
 	}
 
 	side, err := room.Game.AddPlayer(client.Name)
@@ -470,6 +472,7 @@ func (h *LCHub) handleDisconnect(client *LCClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("lostcities", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -521,6 +524,7 @@ func (h *LCHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("lostcities", false)
 	}
 }
 

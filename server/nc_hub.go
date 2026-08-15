@@ -102,6 +102,7 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("numberchange", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -155,6 +156,7 @@ func (h *NCHub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("numberchange", false)
 	}
 }
 
@@ -314,11 +316,13 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 		gameID := uuid.New().String()
 		room = &ncRoom{Game: NewNCGame(gameID), Clients: map[TeamColor]*NCClient{}}
 		h.waitingRoom = room
+		lobbySetWaiting("numberchange", true)
 		h.rooms[room.Game.ID] = room
 		log.Printf("[NC] Created new game %s", room.Game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil // 게임이 가득 찼으므로 대기 게임 초기화
+		lobbySetWaiting("numberchange", false)
 		log.Printf("[NC] Joining existing game %s", room.Game.ID)
 	}
 

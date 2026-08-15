@@ -107,6 +107,7 @@ func (h *Hub) handleDisconnect(client *Client) {
 		delete(h.rooms, room.Game.ID)
 		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 			h.waitingRoom = nil
+			lobbySetWaiting("ninedragons", false)
 		}
 		h.drop(client.SessionID)
 		return
@@ -160,6 +161,7 @@ func (h *Hub) handleGraceExpired(sessionID string) {
 	delete(h.rooms, room.Game.ID)
 	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
 		h.waitingRoom = nil
+		lobbySetWaiting("ninedragons", false)
 	}
 }
 
@@ -296,11 +298,13 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	if h.waitingRoom == nil {
 		room = &ndRoom{Game: NewGame(), Clients: map[PlayerColor]*Client{}}
 		h.waitingRoom = room
+		lobbySetWaiting("ninedragons", true)
 		h.rooms[room.Game.ID] = room
 		log.Printf("Created new game %s", room.Game.ID)
 	} else {
 		room = h.waitingRoom
 		h.waitingRoom = nil // 게임이 가득 찼으므로 대기 게임 초기화
+		lobbySetWaiting("ninedragons", false)
 		log.Printf("Joining existing game %s", room.Game.ID)
 	}
 
