@@ -17,6 +17,10 @@ import (
 
 const botName = "연습봇"
 
+// rematchWindow 게임 종료 후 재대결을 기다리는 시간. 창이 지나면 방·세션을
+// 정리한다 (테스트에서는 짧게 낮춘다).
+var rematchWindow = 60 * time.Second
+
 // 사람처럼 잠깐 생각하는 시간 (테스트에서는 0으로 낮춘다)
 var (
 	botDelayBase     = 350 * time.Millisecond

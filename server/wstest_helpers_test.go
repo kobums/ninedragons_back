@@ -13,6 +13,8 @@ import (
 func init() {
 	botDelayBase = 0
 	botDelayJitterMs = 0
+	// 재대결 창도 짧게 — 만료 테스트가 기다릴 수 있는 수준으로
+	rematchWindow = 700 * time.Millisecond
 }
 
 // testConn WS 통합 테스트 공용 클라이언트. writeLoop 가 여러 메시지를

@@ -45,6 +45,7 @@ const (
 	QDMsgRejoinGame QDMessageType = "qd_rejoin_game"
 	QDMsgMove       QDMessageType = "qd_move"
 	QDMsgPlaceWall  QDMessageType = "qd_place_wall"
+	QDMsgRematch    QDMessageType = "qd_rematch"
 
 	// 서버 → 클라이언트
 	QDMsgPlayerJoined         QDMessageType = "qd_player_joined"
@@ -52,6 +53,7 @@ const (
 	QDMsgGameState            QDMessageType = "qd_game_state"
 	QDMsgEvent                QDMessageType = "qd_event"
 	QDMsgGameOver             QDMessageType = "qd_game_over"
+	QDMsgRematchOffer         QDMessageType = "qd_rematch_offer"
 	QDMsgOpponentDisconnected QDMessageType = "qd_opponent_disconnected"
 	QDMsgOpponentReconnected  QDMessageType = "qd_opponent_reconnected"
 	QDMsgSessionExpired       QDMessageType = "qd_session_expired"
