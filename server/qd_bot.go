@@ -66,3 +66,13 @@ func (h *QDHub) spawnBot(room *qdRoom) {
 		func(m QDMessage) { h.gameMessage <- QDGameMessage{Client: bot, Message: m} },
 		func(m QDMessage) bool { return m.Type == QDMsgGameOver || m.Type == QDMsgSessionExpired })
 }
+
+// qdRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
+func qdRoomHasBot(room *qdRoom) bool {
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			return true
+		}
+	}
+	return false
+}

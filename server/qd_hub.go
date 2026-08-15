@@ -115,6 +115,38 @@ func (h *QDHub) handleJoinGame(client *QDClient, msg QDMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		game := NewQDGame(uuid.New().String())
+		botRoom := &qdRoom{Game: game, Clients: map[QDSide]*QDClient{}}
+		h.rooms[game.ID] = botRoom
+
+		side, err := game.AddPlayer(client.Name)
+		if err != nil {
+			h.sendError(client, err.Error())
+			return
+		}
+		client.GameID = game.ID
+		client.Side = side
+		botRoom.Clients[side] = client
+
+		log.Printf("[쿼리도][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, qdSideLabel(side), displayName(client.Name))
+
+		h.sendToClient(client, QDMessage{
+			Type: QDMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *qdRoom
 	if h.waitingRoom == nil {
 		game := NewQDGame(uuid.New().String())
@@ -169,8 +201,10 @@ func (h *QDHub) startGame(room *qdRoom) {
 	log.Printf("[쿼리도][경기시작] game=%s | 남=%s | 북=%s | 선공=%s",
 		game.ID, displayName(game.Names[QDSouth]), displayName(game.Names[QDNorth]),
 		qdSideLabel(game.CurrentSide))
-	notify("쿼리도 게임 시작", fmt.Sprintf("%s vs %s",
-		displayName(game.Names[QDSouth]), displayName(game.Names[QDNorth])))
+	if !qdRoomHasBot(room) {
+		notify("쿼리도 게임 시작", fmt.Sprintf("%s vs %s",
+			displayName(game.Names[QDSouth]), displayName(game.Names[QDNorth])))
+	}
 
 	h.broadcastState(room)
 }

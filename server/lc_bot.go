@@ -71,3 +71,13 @@ func (h *LCHub) spawnBot(room *lcRoom) {
 		func(m LCMessage) { h.gameMessage <- LCGameMessage{Client: bot, Message: m} },
 		func(m LCMessage) bool { return m.Type == LCMsgGameOver || m.Type == LCMsgSessionExpired })
 }
+
+// lcRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
+func lcRoomHasBot(room *lcRoom) bool {
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			return true
+		}
+	}
+	return false
+}

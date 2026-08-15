@@ -85,3 +85,13 @@ func (h *OTHub) spawnBot(room *otRoom) {
 		func(m OTMessage) { h.gameMessage <- OTGameMessage{Client: bot, Message: m} },
 		func(m OTMessage) bool { return m.Type == OTMsgGameOver || m.Type == OTMsgSessionExpired })
 }
+
+// otRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
+func otRoomHasBot(room *otRoom) bool {
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			return true
+		}
+	}
+	return false
+}

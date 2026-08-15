@@ -115,6 +115,38 @@ func (h *OTHub) handleJoinGame(client *OTClient, msg OTMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		game := NewOTGame(uuid.New().String())
+		botRoom := &otRoom{Game: game, Clients: map[OTSide]*OTClient{}}
+		h.rooms[game.ID] = botRoom
+
+		side, err := game.AddPlayer(client.Name)
+		if err != nil {
+			h.sendError(client, err.Error())
+			return
+		}
+		client.GameID = game.ID
+		client.Side = side
+		botRoom.Clients[side] = client
+
+		log.Printf("[오니타마][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, otSideLabel(side), displayName(client.Name))
+
+		h.sendToClient(client, OTMessage{
+			Type: OTMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *otRoom
 	if h.waitingRoom == nil {
 		game := NewOTGame(uuid.New().String())
@@ -169,8 +201,10 @@ func (h *OTHub) startGame(room *otRoom) {
 	log.Printf("[오니타마][경기시작] game=%s | 남=%s | 북=%s | 선공=%s",
 		game.ID, displayName(game.Names[OTSouth]), displayName(game.Names[OTNorth]),
 		otSideLabel(game.CurrentSide))
-	notify("오니타마 게임 시작", fmt.Sprintf("%s vs %s",
-		displayName(game.Names[OTSouth]), displayName(game.Names[OTNorth])))
+	if !otRoomHasBot(room) {
+		notify("오니타마 게임 시작", fmt.Sprintf("%s vs %s",
+			displayName(game.Names[OTSouth]), displayName(game.Names[OTNorth])))
+	}
 
 	h.broadcastState(room)
 }

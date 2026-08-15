@@ -69,3 +69,13 @@ func (h *CSHub) spawnBot(room *csRoom) {
 		func(m CSMessage) { h.gameMessage <- CSGameMessage{Client: bot, Message: m} },
 		func(m CSMessage) bool { return m.Type == CSMsgGameOver || m.Type == CSMsgSessionExpired })
 }
+
+// csRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
+func csRoomHasBot(room *csRoom) bool {
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			return true
+		}
+	}
+	return false
+}

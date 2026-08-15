@@ -118,3 +118,13 @@ func (h *GSHub) spawnBot(room *gsRoom) {
 		func(m GSMessage) { h.gameMessage <- GSGameMessage{Client: bot, Message: m} },
 		func(m GSMessage) bool { return m.Type == GSMsgGameOver || m.Type == GSMsgSessionExpired })
 }
+
+// gsRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
+func gsRoomHasBot(room *gsRoom) bool {
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			return true
+		}
+	}
+	return false
+}

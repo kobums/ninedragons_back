@@ -113,6 +113,38 @@ func (h *LCHub) handleJoinGame(client *LCClient, msg LCMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		game := NewLCGame(uuid.New().String())
+		botRoom := &lcRoom{Game: game, Clients: map[LCSide]*LCClient{}}
+		h.rooms[game.ID] = botRoom
+
+		side, err := game.AddPlayer(client.Name)
+		if err != nil {
+			h.sendError(client, err.Error())
+			return
+		}
+		client.GameID = game.ID
+		client.Side = side
+		botRoom.Clients[side] = client
+
+		log.Printf("[로스트시티][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, lcSideLabel(side), displayName(client.Name))
+
+		h.sendToClient(client, LCMessage{
+			Type: LCMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *lcRoom
 	if h.waitingRoom == nil {
 		game := NewLCGame(uuid.New().String())
@@ -167,8 +199,10 @@ func (h *LCHub) startGame(room *lcRoom) {
 	log.Printf("[로스트시티][경기시작] game=%s | 남=%s | 북=%s | 선공=%s",
 		game.ID, displayName(game.Names[LCSouth]), displayName(game.Names[LCNorth]),
 		lcSideLabel(game.CurrentSide))
-	notify("로스트 시티 게임 시작", fmt.Sprintf("%s vs %s",
-		displayName(game.Names[LCSouth]), displayName(game.Names[LCNorth])))
+	if !lcRoomHasBot(room) {
+		notify("로스트 시티 게임 시작", fmt.Sprintf("%s vs %s",
+			displayName(game.Names[LCSouth]), displayName(game.Names[LCNorth])))
+	}
 
 	h.broadcastState(room)
 }

@@ -9,6 +9,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// 테스트에서는 연습봇의 "생각하는 시간"을 끈다 (지연은 순수 연출)
+func init() {
+	botDelayBase = 0
+	botDelayJitterMs = 0
+}
+
 // testConn WS 통합 테스트 공용 클라이언트. writeLoop 가 여러 메시지를
 // 개행으로 묶어 보내므로 큐로 풀어서 읽는다. 각 게임 테스트가 임베드해
 // 자기 메시지 타입의 waitFor 만 덧붙인다.

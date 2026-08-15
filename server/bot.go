@@ -17,10 +17,10 @@ import (
 
 const botName = "연습봇"
 
-// 사람처럼 잠깐 생각하는 시간
-const (
-	botDelayBase   = 350 * time.Millisecond
-	botDelayJitter = 450 // ms
+// 사람처럼 잠깐 생각하는 시간 (테스트에서는 0으로 낮춘다)
+var (
+	botDelayBase     = 350 * time.Millisecond
+	botDelayJitterMs = 450
 )
 
 // newBotWSClient 실제 소켓 없는 봇 연결. Connected=true 라 sendTo 가
@@ -52,7 +52,13 @@ func runBot[M any](send chan []byte, decide func(M) *M, deliver func(M), isDone 
 			return
 		}
 		if reply := decide(msg); reply != nil {
-			time.Sleep(botDelayBase + time.Duration(rng.Intn(botDelayJitter))*time.Millisecond)
+			delay := botDelayBase
+			if botDelayJitterMs > 0 {
+				delay += time.Duration(rng.Intn(botDelayJitterMs)) * time.Millisecond
+			}
+			if delay > 0 {
+				time.Sleep(delay)
+			}
 			deliver(*reply)
 		}
 	}

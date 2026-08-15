@@ -116,6 +116,38 @@ func (h *GSHub) handleJoinGame(client *GSClient, msg GSMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		game := NewGSGame(uuid.New().String())
+		botRoom := &gsRoom{Game: game, Clients: map[GSSide]*GSClient{}}
+		h.rooms[game.ID] = botRoom
+
+		side, err := game.AddPlayer(client.Name)
+		if err != nil {
+			h.sendError(client, err.Error())
+			return
+		}
+		client.GameID = game.ID
+		client.Side = side
+		botRoom.Clients[side] = client
+
+		log.Printf("[가이스터][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, gsSideLabel(side), displayName(client.Name))
+
+		h.sendToClient(client, GSMessage{
+			Type: GSMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *gsRoom
 	if h.waitingRoom == nil {
 		game := NewGSGame(uuid.New().String())
@@ -170,8 +202,10 @@ func (h *GSHub) startGame(room *gsRoom) {
 	log.Printf("[가이스터][경기시작] game=%s | 남=%s | 북=%s | 선공=%s",
 		game.ID, displayName(game.Names[GSSouth]), displayName(game.Names[GSNorth]),
 		gsSideLabel(game.CurrentSide))
-	notify("가이스터 게임 시작", fmt.Sprintf("%s vs %s",
-		displayName(game.Names[GSSouth]), displayName(game.Names[GSNorth])))
+	if !gsRoomHasBot(room) {
+		notify("가이스터 게임 시작", fmt.Sprintf("%s vs %s",
+			displayName(game.Names[GSSouth]), displayName(game.Names[GSNorth])))
+	}
 
 	h.broadcastState(room)
 }

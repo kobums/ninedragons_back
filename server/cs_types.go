@@ -120,6 +120,8 @@ type CSMessage struct {
 
 type CSJoinGamePayload struct {
 	PlayerName string `json:"playerName"`
+	// VsBot true 면 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	VsBot bool `json:"vsBot,omitempty"`
 }
 
 type CSRejoinGamePayload struct {

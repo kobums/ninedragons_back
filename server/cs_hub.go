@@ -117,6 +117,38 @@ func (h *CSHub) handleJoinGame(client *CSClient, msg CSMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		game := NewCSGame(uuid.New().String())
+		botRoom := &csRoom{Game: game, Clients: map[CSSide]*CSClient{}}
+		h.rooms[game.ID] = botRoom
+
+		side, err := game.AddPlayer(client.Name)
+		if err != nil {
+			h.sendError(client, err.Error())
+			return
+		}
+		client.GameID = game.ID
+		client.Side = side
+		botRoom.Clients[side] = client
+
+		log.Printf("[캔트스톱][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, csSideLabel(side), displayName(client.Name))
+
+		h.sendToClient(client, CSMessage{
+			Type: CSMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *csRoom
 	if h.waitingRoom == nil {
 		game := NewCSGame(uuid.New().String())
@@ -171,8 +203,10 @@ func (h *CSHub) startGame(room *csRoom) {
 	log.Printf("[캔트스톱][경기시작] game=%s | 남=%s | 북=%s | 선공=%s",
 		game.ID, displayName(game.Names[CSSouth]), displayName(game.Names[CSNorth]),
 		csSideLabel(game.CurrentSide))
-	notify("캔트 스톱 게임 시작", fmt.Sprintf("%s vs %s",
-		displayName(game.Names[CSSouth]), displayName(game.Names[CSNorth])))
+	if !csRoomHasBot(room) {
+		notify("캔트 스톱 게임 시작", fmt.Sprintf("%s vs %s",
+			displayName(game.Names[CSSouth]), displayName(game.Names[CSNorth])))
+	}
 
 	h.broadcastState(room)
 }
