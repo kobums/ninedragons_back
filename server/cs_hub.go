@@ -364,6 +364,15 @@ func (h *CSHub) finishIfOver(room *csRoom) {
 		game.ID, displayName(game.Names[game.Winner]), csSideLabel(game.Winner),
 		game.ClaimedBy(game.Winner), matchDuration(game.StartedAt))
 
+	RecordMatch(MatchRecord{
+		Game:     "cantstop",
+		Players:  displayName(game.Names[CSSouth]) + " vs " + displayName(game.Names[CSNorth]),
+		Winner:   displayName(game.Names[game.Winner]),
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+		Bot:      csRoomHasBot(room),
+	})
+
 	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
 	room.Rematch = map[CSSide]bool{}
 	gameID := game.ID

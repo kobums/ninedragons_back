@@ -499,6 +499,18 @@ func (h *STHub) finishIfOver(room *stRoom) {
 		displayName(game.Names[STNorth]), game.stoneCount(STNorth),
 		stEndReasonLabel(game.EndReason), matchDuration(game.StartedAt))
 
+	stWinner := ""
+	if game.Winner != "" {
+		stWinner = displayName(game.Names[game.Winner])
+	}
+	RecordMatch(MatchRecord{
+		Game:     "schottentotten",
+		Players:  displayName(game.Names[STSouth]) + " vs " + displayName(game.Names[STNorth]),
+		Winner:   stWinner,
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+	})
+
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)
 }

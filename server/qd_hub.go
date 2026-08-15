@@ -346,6 +346,15 @@ func (h *QDHub) finishIfOver(room *qdRoom) {
 		game.ID, displayName(game.Names[game.Winner]), qdSideLabel(game.Winner),
 		qdEndReasonLabel(game.EndReason), matchDuration(game.StartedAt))
 
+	RecordMatch(MatchRecord{
+		Game:     "quoridor",
+		Players:  displayName(game.Names[QDSouth]) + " vs " + displayName(game.Names[QDNorth]),
+		Winner:   displayName(game.Names[game.Winner]),
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+		Bot:      qdRoomHasBot(room),
+	})
+
 	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
 	room.Rematch = map[QDSide]bool{}
 	gameID := game.ID

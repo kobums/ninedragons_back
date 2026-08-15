@@ -335,6 +335,19 @@ func (h *LCHub) finishIfOver(room *lcRoom) {
 	log.Printf("[로스트시티][경기결과] game=%s | %s | 남 %d : 북 %d | 소요=%s",
 		game.ID, resultLabel, game.Score(LCSouth), game.Score(LCNorth), matchDuration(game.StartedAt))
 
+	lcWinner := ""
+	if game.Winner != "" {
+		lcWinner = displayName(winnerName)
+	}
+	RecordMatch(MatchRecord{
+		Game:     "lostcities",
+		Players:  displayName(game.Names[LCSouth]) + " vs " + displayName(game.Names[LCNorth]),
+		Winner:   lcWinner,
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+		Bot:      lcRoomHasBot(room),
+	})
+
 	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
 	room.Rematch = map[LCSide]bool{}
 	gameID := game.ID

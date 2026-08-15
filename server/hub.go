@@ -526,6 +526,20 @@ func (h *Hub) logMatchResult(game *Game, winner PlayerColor) {
 	log.Printf("[구룡투][경기결과] game=%s | 승자=%s | 파랑=%s(%d승) vs 빨강=%s(%d승) | 라운드=%d | 소요=%s",
 		game.ID, result, blueName, game.BlueWins, redName, game.RedWins,
 		game.CurrentRound-1, matchDuration(game.StartedAt))
+
+	winnerName := ""
+	switch winner {
+	case Blue:
+		winnerName = blueName
+	case Red:
+		winnerName = redName
+	}
+	RecordMatch(MatchRecord{
+		Game:     "ninedragons",
+		Players:  blueName + " vs " + redName,
+		Winner:   winnerName,
+		Duration: matchSeconds(game.StartedAt),
+	})
 }
 
 // colorLabel 색상 한글 표기

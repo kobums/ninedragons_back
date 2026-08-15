@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -603,6 +604,18 @@ func (h *DVHub) finishIfOver(room *dvRoom, reason string) {
 
 	log.Printf("[다빈치][경기결과] game=%s | 승자=seat%d(%s) | 인원=%d | 소요=%s",
 		game.ID, game.WinnerSeat, displayName(winnerName), len(game.Players), matchDuration(game.StartedAt))
+
+	dvNames := []string{}
+	for _, p := range game.Players {
+		dvNames = append(dvNames, displayName(p.Name))
+	}
+	RecordMatch(MatchRecord{
+		Game:     "davinci",
+		Players:  strings.Join(dvNames, " vs "),
+		Winner:   displayName(winnerName),
+		Reason:   reason,
+		Duration: matchSeconds(game.StartedAt),
+	})
 
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)

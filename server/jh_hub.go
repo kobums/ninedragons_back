@@ -406,6 +406,14 @@ func (h *JHHub) finishIfOver(room *jhRoom) {
 		game.ID, displayName(game.Names[game.Winner]), jhRoleLabel(game.Winner),
 		game.Marker, jhEndReasonLabel(game.EndReason), matchDuration(game.StartedAt))
 
+	RecordMatch(MatchRecord{
+		Game:     "jekyllhyde",
+		Players:  displayName(game.Names[JHJekyll]) + " vs " + displayName(game.Names[JHHyde]),
+		Winner:   displayName(game.Names[game.Winner]),
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+	})
+
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)
 }

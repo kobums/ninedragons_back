@@ -385,6 +385,15 @@ func (h *GSHub) finishIfOver(room *gsRoom) {
 		game.ID, displayName(game.Names[game.Winner]), gsSideLabel(game.Winner),
 		gsEndReasonLabel(game.EndReason), matchDuration(game.StartedAt))
 
+	RecordMatch(MatchRecord{
+		Game:     "geister",
+		Players:  displayName(game.Names[GSSouth]) + " vs " + displayName(game.Names[GSNorth]),
+		Winner:   displayName(game.Names[game.Winner]),
+		Reason:   game.EndReason,
+		Duration: matchSeconds(game.StartedAt),
+		Bot:      gsRoomHasBot(room),
+	})
+
 	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
 	room.Rematch = map[GSSide]bool{}
 	gameID := game.ID

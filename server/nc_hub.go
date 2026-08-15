@@ -539,6 +539,21 @@ func (h *NCHub) logMatchResult(game *NCGame, winner TeamColor, reason string) {
 	log.Printf("[넘버체인지][경기결과] game=%s | 승자=%s | 팀1=%s(%d점) vs 팀2=%s(%d점) | 라운드=%d | 종료사유=%s | 소요=%s",
 		game.ID, result, team1Name, game.Team1Score, team2Name, game.Team2Score,
 		game.CurrentRound-1, ncEndReason(reason), matchDuration(game.StartedAt))
+
+	winnerName := ""
+	switch winner {
+	case Team1:
+		winnerName = team1Name
+	case Team2:
+		winnerName = team2Name
+	}
+	RecordMatch(MatchRecord{
+		Game:     "numberchange",
+		Players:  team1Name + " vs " + team2Name,
+		Winner:   winnerName,
+		Reason:   reason,
+		Duration: matchSeconds(game.StartedAt),
+	})
 }
 
 // teamLabel 팀 한글 표기

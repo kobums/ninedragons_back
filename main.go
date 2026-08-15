@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"ninedragons/server"
+	"os"
 )
 
 func main() {
@@ -47,6 +48,14 @@ func main() {
 		{"Can't Stop", "/ws/cantstop", csHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeCSWs(csHub, w, r) }},
 	}
+
+	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
+	statsPath := os.Getenv("STATS_DB")
+	if statsPath == "" {
+		statsPath = "stats/matches.jsonl"
+	}
+	server.InitStats(statsPath)
+	http.HandleFunc("/stats", server.StatsHandler)
 
 	log.Println("Server starting on :8003")
 	for _, ep := range endpoints {
