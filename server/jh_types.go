@@ -63,6 +63,7 @@ const (
 	JHMsgDeclareSuit   JHMessageType = "jh_declare_suit"
 	JHMsgStealTrick    JHMessageType = "jh_steal_trick"
 	JHMsgGreedCards    JHMessageType = "jh_greed_cards"
+	JHMsgRematch       JHMessageType = "jh_rematch"
 
 	// 서버 → 클라이언트
 	JHMsgPlayerJoined         JHMessageType = "jh_player_joined"
@@ -71,6 +72,7 @@ const (
 	JHMsgGameState            JHMessageType = "jh_game_state"
 	JHMsgEvent                JHMessageType = "jh_event"
 	JHMsgGameOver             JHMessageType = "jh_game_over"
+	JHMsgRematchOffer         JHMessageType = "jh_rematch_offer"
 	JHMsgOpponentDisconnected JHMessageType = "jh_opponent_disconnected"
 	JHMsgOpponentReconnected  JHMessageType = "jh_opponent_reconnected"
 	JHMsgSessionExpired       JHMessageType = "jh_session_expired"

@@ -27,6 +27,10 @@ const (
 	MsgPlayerJoined  MessageType = "player_joined"
 	MsgWaitingPlayer MessageType = "waiting_player"
 
+	// 재대결 관련
+	MsgRematch      MessageType = "rematch"
+	MsgRematchOffer MessageType = "rematch_offer"
+
 	// 재접속 관련
 	MsgRejoinGame           MessageType = "rejoin_game"
 	MsgGameState            MessageType = "game_state"
@@ -65,6 +69,8 @@ type Message struct {
 type JoinGamePayload struct {
 	PlayerName string      `json:"playerName"`
 	Color      PlayerColor `json:"color"`
+	// VsBot true 면 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	VsBot bool `json:"vsBot,omitempty"`
 }
 
 type PlayTilePayload struct {
@@ -168,6 +174,10 @@ const (
 	NCMsgWaitingPlayer NCMessageType = "nc_waiting_player"
 	NCMsgUseHidden     NCMessageType = "nc_use_hidden"
 
+	// 재대결 관련
+	NCMsgRematch      NCMessageType = "nc_rematch"
+	NCMsgRematchOffer NCMessageType = "nc_rematch_offer"
+
 	// 재접속 관련
 	NCMsgRejoinGame           NCMessageType = "nc_rejoin_game"
 	NCMsgGameState            NCMessageType = "nc_game_state"
@@ -235,6 +245,8 @@ type NCMessage struct {
 type NCJoinGamePayload struct {
 	PlayerName string    `json:"playerName"`
 	Team       TeamColor `json:"team,omitempty"`
+	// VsBot true 면 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	VsBot bool `json:"vsBot,omitempty"`
 }
 
 // NCSubmitBlocksPayload 블록 제출

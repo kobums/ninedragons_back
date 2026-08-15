@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -13,6 +14,10 @@ import (
 type ncRoom struct {
 	Game    *NCGame
 	Clients map[TeamColor]*NCClient
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[TeamColor]bool
+	CleanupTimer *time.Timer
 }
 
 type NCHub struct {
@@ -34,6 +39,9 @@ type NCHub struct {
 	// 게임 메시지
 	gameMessage chan NCGameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*NCClient]
 }
@@ -50,6 +58,7 @@ func NewNCHub() *NCHub {
 		clients:        make(map[*NCClient]bool),
 		rooms:          make(map[string]*ncRoom),
 		gameMessage:    make(chan NCGameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*NCClient](),
 	}
 }
@@ -74,6 +83,9 @@ func (h *NCHub) Run() {
 
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
+
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
 
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
@@ -170,6 +182,8 @@ func (h *NCHub) handleGameMessage(gm NCGameMessage) {
 		h.handleSubmitBlocks(gm.Client, gm.Message)
 	case NCMsgSelectBlock:
 		h.handleSelectBlock(gm.Client, gm.Message)
+	case NCMsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -309,6 +323,35 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		botRoom := &ncRoom{Game: NewNCGame(uuid.New().String()), Clients: map[TeamColor]*NCClient{}}
+		h.rooms[botRoom.Game.ID] = botRoom
+		game := botRoom.Game
+		client.GameID = game.ID
+
+		// 사람은 선호 팀, 봇은 남은 팀
+		team := game.AddPlayer(client.Name, payload.Team)
+		client.Team = team
+		botRoom.Clients[team] = client
+
+		log.Printf("[넘버체인지][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, teamLabel(team), displayName(client.Name))
+
+		h.sendToClient(client, NCMessage{
+			Type: NCMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourTeam":  team,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *ncRoom
 
 	// 대기 중인 게임이 있으면 참가, 없으면 새로 생성
@@ -352,32 +395,8 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 
 	// 게임 시작 확인
 	if game.IsReady() && !game.Ready {
-		game.Start()
 		log.Printf("[NC] Game %s is ready! Starting game with %d players", game.ID, len(room.Clients))
-
-		// 플레이어 이름 가져오기
-		team1Name := game.Names[Team1]
-		team2Name := game.Names[Team2]
-
-		// 경기 시작 로그 (닉네임)
-		log.Printf("[넘버체인지][경기시작] game=%s | 팀1=%s | 팀2=%s | 선공=%s",
-			game.ID, displayName(team1Name), displayName(team2Name), game.CurrentTeam)
-
-		notify("넘버체인지 게임 시작", fmt.Sprintf("팀1 %s vs 팀2 %s",
-			displayName(team1Name), displayName(team2Name)))
-
-		// 두 플레이어 모두에게 게임 시작 알림
-		for playerTeam, player := range room.Clients {
-			h.sendToClient(player, NCMessage{
-				Type: NCMsgGameStart,
-				Payload: NCGameStartPayload{
-					YourTeam:  playerTeam,
-					FirstTeam: game.CurrentTeam,
-					Team1Name: team1Name,
-					Team2Name: team2Name,
-				},
-			})
-		}
+		h.startGame(room)
 	} else {
 		log.Printf("[NC] Game %s waiting for more players. Current: %d", game.ID, len(room.Clients))
 		// 대기 중 메시지
@@ -385,6 +404,41 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 			Type: NCMsgWaitingPlayer,
 			Payload: map[string]string{
 				"message": "상대방을 기다리는 중...",
+			},
+		})
+	}
+}
+
+// startGame 두 팀이 모두 앉은 방의 게임 시작 브로드캐스트 (입장·재대결 공용)
+func (h *NCHub) startGame(room *ncRoom) {
+	game := room.Game
+	if !game.IsReady() || game.Ready {
+		return
+	}
+	game.Start()
+
+	// 플레이어 이름 가져오기
+	team1Name := game.Names[Team1]
+	team2Name := game.Names[Team2]
+
+	// 경기 시작 로그 (닉네임)
+	log.Printf("[넘버체인지][경기시작] game=%s | 팀1=%s | 팀2=%s | 선공=%s",
+		game.ID, displayName(team1Name), displayName(team2Name), game.CurrentTeam)
+
+	if !ncRoomHasBot(room) {
+		notify("넘버체인지 게임 시작", fmt.Sprintf("팀1 %s vs 팀2 %s",
+			displayName(team1Name), displayName(team2Name)))
+	}
+
+	// 두 플레이어 모두에게 게임 시작 알림
+	for playerTeam, player := range room.Clients {
+		h.sendToClient(player, NCMessage{
+			Type: NCMsgGameStart,
+			Payload: NCGameStartPayload{
+				YourTeam:  playerTeam,
+				FirstTeam: game.CurrentTeam,
+				Team1Name: team1Name,
+				Team2Name: team2Name,
 			},
 		})
 	}
@@ -403,6 +457,11 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 	}
 
 	game := room.Game
+
+	// 재대결 창(게임 종료 후) 동안 들어온 뒤늦은 제출은 무시한다
+	if over, _ := game.IsGameOver(); over {
+		return
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload NCSubmitBlocksPayload
 	json.Unmarshal(payloadBytes, &payload)
@@ -483,10 +542,114 @@ func (h *NCHub) tryProcessRound(room *ncRoom) {
 		},
 	})
 
-	// 게임 종료 처리
-	h.clearGameSessions(room)
-	delete(h.rooms, game.ID)
+	// 경기 결과 로그
 	h.logMatchResult(game, winner, reason)
+
+	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+	room.Rematch = map[TeamColor]bool{}
+	gameID := game.ID
+	room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 봇전은 즉시, 사람전은 양쪽 신청 시 재시작.
+func (h *NCHub) handleRematch(client *NCClient) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.CleanupTimer == nil {
+		return
+	}
+	if over, _ := room.Game.IsGameOver(); !over {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[TeamColor]bool{}
+	}
+	room.Rematch[client.Team] = true
+
+	otherTeam := Team2
+	if client.Team == Team2 {
+		otherTeam = Team1
+	}
+	opponent := room.Clients[otherTeam]
+	if (opponent != nil && opponent.Bot) || room.Rematch[otherTeam] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent != nil {
+		h.sendToClient(opponent, NCMessage{Type: NCMsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지, 봇은 재소환)
+func (h *NCHub) restartRematch(room *ncRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*NCClient{}
+	hadBot := false
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if c.Bot {
+			hadBot = true
+			h.drop(c.SessionID)
+		} else {
+			humans = append(humans, c)
+		}
+	}
+
+	game := NewNCGame(room.Game.ID)
+	room.Game = game
+	room.Clients = map[TeamColor]*NCClient{}
+	for _, c := range humans {
+		// 이전 판과 같은 팀 유지 (선호 팀으로 재등록)
+		team := game.AddPlayer(c.Name, c.Team)
+		c.Team = team
+		room.Clients[team] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, NCMessage{
+			Type: NCMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourTeam":  team,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+	if hadBot {
+		h.spawnBot(room)
+	}
+
+	log.Printf("[넘버체인지][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *NCHub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil {
+		return
+	}
+	if over, _ := room.Game.IsGameOver(); !over {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if !c.Bot {
+			h.sendToClient(c, NCMessage{Type: NCMsgSessionExpired})
+		}
+		h.drop(c.SessionID)
+		// 같은 연결이 새 게임에 입장할 수 있도록 신원을 비운다
+		// (비우지 않으면 join 연타 가드에 걸려 재입장이 막힌다)
+		c.SessionID = ""
+		c.GameID = ""
+	}
+	delete(h.rooms, gameID)
 }
 
 func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
@@ -498,6 +661,11 @@ func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
 				Message: "게임을 찾을 수 없습니다",
 			},
 		})
+		return
+	}
+
+	// 재대결 창(게임 종료 후) 동안 들어온 뒤늦은 선택은 무시한다
+	if over, _ := room.Game.IsGameOver(); over {
 		return
 	}
 

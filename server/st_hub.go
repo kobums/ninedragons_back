@@ -14,6 +14,10 @@ import (
 type stRoom struct {
 	Game    *STGame
 	Clients map[STSide]*STClient
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[STSide]bool
+	CleanupTimer *time.Timer
 }
 
 type STHub struct {
@@ -35,6 +39,9 @@ type STHub struct {
 	// 게임 메시지
 	gameMessage chan STGameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*STClient]
 
@@ -55,6 +62,7 @@ func NewSTHub() *STHub {
 		rooms:          make(map[string]*stRoom),
 		waitingRooms:   make(map[bool]*stRoom),
 		gameMessage:    make(chan STGameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*STClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -80,6 +88,9 @@ func (h *STHub) Run() {
 
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
+
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
 
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
@@ -109,6 +120,8 @@ func (h *STHub) handleGameMessage(gm STGameMessage) {
 		h.handleRecruiterDraw(gm.Client, gm.Message)
 	case STMsgRecruiterReturn:
 		h.handleRecruiterReturn(gm.Client, gm.Message)
+	case STMsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -513,8 +526,95 @@ func (h *STHub) finishIfOver(room *stRoom) {
 		Duration: matchSeconds(game.StartedAt),
 	})
 
-	h.clearGameSessions(room)
-	delete(h.rooms, game.ID)
+	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+	room.Rematch = map[STSide]bool{}
+	gameID := game.ID
+	room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 양쪽 모두 신청하면 재시작.
+func (h *STHub) handleRematch(client *STClient) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Phase != STPhaseGameOver || room.CleanupTimer == nil {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[STSide]bool{}
+	}
+	room.Rematch[client.Side] = true
+
+	opponent := room.Clients[stOther(client.Side)]
+	if (opponent != nil && opponent.Bot) || room.Rematch[stOther(client.Side)] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent != nil {
+		h.sendToClient(opponent, STMessage{Type: STMsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지)
+func (h *STHub) restartRematch(room *stRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*STClient{}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		humans = append(humans, c)
+	}
+
+	// 전술 카드 모드는 원래 게임과 동일하게 유지한다
+	game := NewSTGame(room.Game.ID, room.Game.TacticMode)
+	room.Game = game
+	room.Clients = map[STSide]*STClient{}
+	for _, c := range humans {
+		side, err := game.AddPlayer(c.Name)
+		if err != nil {
+			continue
+		}
+		c.Side = side
+		room.Clients[side] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, STMessage{
+			Type: STMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+
+	log.Printf("[쇼텐토텐][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *STHub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil || room.Game.Phase != STPhaseGameOver {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if !c.Bot {
+			h.sendToClient(c, STMessage{Type: STMsgSessionExpired})
+		}
+		h.drop(c.SessionID)
+		// 같은 연결이 새 게임에 입장할 수 있도록 신원을 비운다
+		// (비우지 않으면 join 연타 가드에 걸려 재입장이 막힌다)
+		c.SessionID = ""
+		c.GameID = ""
+	}
+	delete(h.rooms, gameID)
 }
 
 // ==================== 재접속 / 연결 끊김 ====================

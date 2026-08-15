@@ -14,6 +14,10 @@ import (
 type jhRoom struct {
 	Game    *JHGame
 	Clients map[JHRole]*JHClient
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[JHRole]bool
+	CleanupTimer *time.Timer
 }
 
 type JHHub struct {
@@ -35,6 +39,9 @@ type JHHub struct {
 	// 게임 메시지
 	gameMessage chan JHGameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*JHClient]
 
@@ -54,6 +61,7 @@ func NewJHHub() *JHHub {
 		clients:        make(map[*JHClient]bool),
 		rooms:          make(map[string]*jhRoom),
 		gameMessage:    make(chan JHGameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*JHClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -80,6 +88,9 @@ func (h *JHHub) Run() {
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
 
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
+
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
 		}
@@ -102,6 +113,8 @@ func (h *JHHub) handleGameMessage(gm JHGameMessage) {
 		h.handleStealTrick(gm.Client, gm.Message)
 	case JHMsgGreedCards:
 		h.handleGreedCards(gm.Client, gm.Message)
+	case JHMsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -416,8 +429,93 @@ func (h *JHHub) finishIfOver(room *jhRoom) {
 		Duration: matchSeconds(game.StartedAt),
 	})
 
-	h.clearGameSessions(room)
-	delete(h.rooms, game.ID)
+	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+	room.Rematch = map[JHRole]bool{}
+	gameID := game.ID
+	room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 양쪽 모두 신청하면 재시작.
+func (h *JHHub) handleRematch(client *JHClient) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Phase != JHPhaseGameOver || room.CleanupTimer == nil {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[JHRole]bool{}
+	}
+	room.Rematch[client.Role] = true
+
+	if room.Rematch[jhOther(client.Role)] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent := room.Clients[jhOther(client.Role)]; opponent != nil {
+		h.sendToClient(opponent, JHMessage{Type: JHMsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지).
+// AddPlayer 규칙(먼저 등록되는 쪽이 지킬)을 따르므로 역할이 바뀔 수 있다 —
+// 원작도 라운드마다 역할이 갈리는 게임이라 무방하다.
+func (h *JHHub) restartRematch(room *jhRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*JHClient{}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		humans = append(humans, c)
+	}
+
+	game := NewJHGame(room.Game.ID)
+	room.Game = game
+	room.Clients = map[JHRole]*JHClient{}
+	for _, c := range humans {
+		role, err := game.AddPlayer(c.Name)
+		if err != nil {
+			continue
+		}
+		c.Role = role
+		room.Clients[role] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, JHMessage{
+			Type: JHMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourRole":  role,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+
+	log.Printf("[지킬앤하이드][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *JHHub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil || room.Game.Phase != JHPhaseGameOver {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		h.sendToClient(c, JHMessage{Type: JHMsgSessionExpired})
+		h.drop(c.SessionID)
+		// 같은 연결이 새 게임에 입장할 수 있도록 신원을 비운다
+		// (비우지 않으면 join 연타 가드에 걸려 재입장이 막힌다)
+		c.SessionID = ""
+		c.GameID = ""
+	}
+	delete(h.rooms, gameID)
 }
 
 // ==================== 재접속 / 연결 끊김 ====================

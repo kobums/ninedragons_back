@@ -79,6 +79,7 @@ const (
 	STMsgPass            STMessageType = "st_pass"
 	STMsgRecruiterDraw   STMessageType = "st_recruiter_draw"
 	STMsgRecruiterReturn STMessageType = "st_recruiter_return"
+	STMsgRematch         STMessageType = "st_rematch"
 
 	// 서버 → 클라이언트
 	STMsgPlayerJoined         STMessageType = "st_player_joined"
@@ -90,6 +91,7 @@ const (
 	STMsgOpponentDisconnected STMessageType = "st_opponent_disconnected"
 	STMsgOpponentReconnected  STMessageType = "st_opponent_reconnected"
 	STMsgSessionExpired       STMessageType = "st_session_expired"
+	STMsgRematchOffer         STMessageType = "st_rematch_offer"
 	STMsgError                STMessageType = "st_error"
 )
 

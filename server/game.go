@@ -8,8 +8,13 @@ import (
 
 // NewGame 새 게임 생성
 func NewGame() *Game {
+	return NewGameWithID(uuid.New().String())
+}
+
+// NewGameWithID 지정한 ID로 새 게임 생성 (재대결 시 같은 방 ID를 유지한다)
+func NewGameWithID(id string) *Game {
 	return &Game{
-		ID:            uuid.New().String(),
+		ID:            id,
 		Names:         make(map[PlayerColor]string),
 		CurrentRound:  1,
 		BlueWins:      0,

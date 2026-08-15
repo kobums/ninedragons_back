@@ -18,6 +18,10 @@ const defaultDisconnectGrace = 90 * time.Second
 type ndRoom struct {
 	Game    *Game
 	Clients map[PlayerColor]*Client
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[PlayerColor]bool
+	CleanupTimer *time.Timer
 }
 
 type Hub struct {
@@ -39,6 +43,9 @@ type Hub struct {
 	// 게임 메시지
 	gameMessage chan GameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*Client]
 }
@@ -55,6 +62,7 @@ func NewHub() *Hub {
 		clients:        make(map[*Client]bool),
 		rooms:          make(map[string]*ndRoom),
 		gameMessage:    make(chan GameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*Client](),
 	}
 }
@@ -79,6 +87,9 @@ func (h *Hub) Run() {
 
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
+
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
 
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
@@ -173,6 +184,8 @@ func (h *Hub) handleGameMessage(gm GameMessage) {
 		h.handleRejoin(gm.Client, gm.Message)
 	case MsgPlayTile:
 		h.handlePlayTile(gm.Client, gm.Message)
+	case MsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -292,6 +305,45 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
+	// 혼자 연습: 대기 슬롯을 거치지 않고 연습봇과 즉시 매칭
+	if payload.VsBot {
+		botRoom := &ndRoom{Game: NewGame(), Clients: map[PlayerColor]*Client{}}
+		h.rooms[botRoom.Game.ID] = botRoom
+		game := botRoom.Game
+		client.GameID = game.ID
+
+		// 사람은 선호 색상, 봇은 남은 색상
+		color := Blue
+		if payload.Color == Red {
+			color = Red
+		}
+		if err := game.AddPlayer(client.Name, color); err != nil {
+			h.sendToClient(client, Message{
+				Type:    MsgError,
+				Payload: ErrorPayload{Message: err.Error()},
+			})
+			return
+		}
+		client.Color = color
+		botRoom.Clients[color] = client
+
+		log.Printf("[구룡투][입장] game=%s | %s=%s 봇전 시작",
+			game.ID, colorLabel(color), displayName(client.Name))
+
+		h.sendToClient(client, Message{
+			Type: MsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourColor": color,
+				"gameId":    game.ID,
+				"sessionId": client.SessionID,
+			},
+		})
+
+		h.spawnBot(botRoom)
+		h.startGame(botRoom)
+		return
+	}
+
 	var room *ndRoom
 
 	// 대기 중인 게임이 있으면 참가, 없으면 새로 생성
@@ -372,31 +424,7 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	// 게임 시작 확인
 	if game.Ready {
 		log.Printf("Game %s is ready! Starting game with %d players", game.ID, len(room.Clients))
-
-		// 플레이어 이름 가져오기
-		blueName := game.Names[Blue]
-		redName := game.Names[Red]
-
-		// 경기 시작 로그 (닉네임)
-		game.StartedAt = time.Now()
-		log.Printf("[구룡투][경기시작] game=%s | 파랑=%s | 빨강=%s | 선공=%s",
-			game.ID, displayName(blueName), displayName(redName), game.CurrentPlayer)
-
-		notify("구룡투 게임 시작", fmt.Sprintf("파랑 %s vs 빨강 %s",
-			displayName(blueName), displayName(redName)))
-
-		// 두 플레이어 모두에게 게임 시작 알림
-		for playerColor, player := range room.Clients {
-			h.sendToClient(player, Message{
-				Type: MsgGameStart,
-				Payload: GameStartPayload{
-					FirstPlayer: game.CurrentPlayer,
-					YourColor:   playerColor,
-					BlueName:    blueName,
-					RedName:     redName,
-				},
-			})
-		}
+		h.startGame(room)
 	} else {
 		log.Printf("Game %s waiting for more players. Current: %d", game.ID, len(room.Clients))
 		// 대기 중 메시지
@@ -404,6 +432,36 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 			Type: MsgWaitingPlayer,
 			Payload: map[string]string{
 				"message": "상대방을 기다리는 중...",
+			},
+		})
+	}
+}
+
+// startGame 두 명이 모두 앉은 방의 게임 시작 브로드캐스트 (입장·재대결 공용)
+func (h *Hub) startGame(room *ndRoom) {
+	game := room.Game
+	blueName := game.Names[Blue]
+	redName := game.Names[Red]
+
+	// 경기 시작 로그 (닉네임)
+	game.StartedAt = time.Now()
+	log.Printf("[구룡투][경기시작] game=%s | 파랑=%s | 빨강=%s | 선공=%s",
+		game.ID, displayName(blueName), displayName(redName), game.CurrentPlayer)
+
+	if !ndRoomHasBot(room) {
+		notify("구룡투 게임 시작", fmt.Sprintf("파랑 %s vs 빨강 %s",
+			displayName(blueName), displayName(redName)))
+	}
+
+	// 두 플레이어 모두에게 게임 시작 알림
+	for playerColor, player := range room.Clients {
+		h.sendToClient(player, Message{
+			Type: MsgGameStart,
+			Payload: GameStartPayload{
+				FirstPlayer: game.CurrentPlayer,
+				YourColor:   playerColor,
+				BlueName:    blueName,
+				RedName:     redName,
 			},
 		})
 	}
@@ -421,6 +479,11 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 		return
 	}
 	game := room.Game
+
+	// 재대결 창(게임 종료 후) 동안 들어온 뒤늦은 타일은 무시한다
+	if over, _ := game.IsGameOver(); over {
+		return
+	}
 
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload PlayTilePayload
@@ -507,11 +570,114 @@ func (h *Hub) handlePlayTile(client *Client, msg Message) {
 			// 경기 결과 로그
 			h.logMatchResult(game, finalWinner)
 
-			// 게임 종료 처리
-			h.clearGameSessions(room)
-			delete(h.rooms, game.ID)
+			// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+			room.Rematch = map[PlayerColor]bool{}
+			gameID := game.ID
+			room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
 		}
 	}
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 봇전은 즉시, 사람전은 양쪽 신청 시 재시작.
+func (h *Hub) handleRematch(client *Client) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.CleanupTimer == nil {
+		return
+	}
+	if over, _ := room.Game.IsGameOver(); !over {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[PlayerColor]bool{}
+	}
+	room.Rematch[client.Color] = true
+
+	otherColor := Red
+	if client.Color == Red {
+		otherColor = Blue
+	}
+	opponent := room.Clients[otherColor]
+	if (opponent != nil && opponent.Bot) || room.Rematch[otherColor] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent != nil {
+		h.sendToClient(opponent, Message{Type: MsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지, 봇은 재소환)
+func (h *Hub) restartRematch(room *ndRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*Client{}
+	hadBot := false
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if c.Bot {
+			hadBot = true
+			h.drop(c.SessionID)
+		} else {
+			humans = append(humans, c)
+		}
+	}
+
+	game := NewGameWithID(room.Game.ID)
+	room.Game = game
+	room.Clients = map[PlayerColor]*Client{}
+	for _, c := range humans {
+		// 이전 판과 같은 색상 유지
+		if err := game.AddPlayer(c.Name, c.Color); err != nil {
+			continue
+		}
+		room.Clients[c.Color] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, Message{
+			Type: MsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourColor": c.Color,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+	if hadBot {
+		h.spawnBot(room)
+	}
+
+	log.Printf("[구룡투][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *Hub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil {
+		return
+	}
+	if over, _ := room.Game.IsGameOver(); !over {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if !c.Bot {
+			h.sendToClient(c, Message{Type: MsgSessionExpired})
+		}
+		h.drop(c.SessionID)
+		// 같은 연결이 새 게임에 입장할 수 있도록 신원을 비운다
+		// (비우지 않으면 join 연타 가드에 걸려 재입장이 막힌다)
+		c.SessionID = ""
+		c.GameID = ""
+	}
+	delete(h.rooms, gameID)
 }
 
 // logMatchResult 경기 종료 결과 로그 (닉네임, 점수, 라운드, 소요 시간)
