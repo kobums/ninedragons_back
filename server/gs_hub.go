@@ -476,6 +476,10 @@ func (h *GSHub) handleRoomExpired(gameID string) {
 			h.sendToClient(c, GSMessage{Type: GSMsgSessionExpired})
 		}
 		h.drop(c.SessionID)
+		// 같은 연결이 새 게임에 입장할 수 있도록 신원을 비운다
+		// (비우지 않으면 join 연타 가드에 걸려 재입장이 막힌다)
+		c.SessionID = ""
+		c.GameID = ""
 	}
 	delete(h.rooms, gameID)
 }
