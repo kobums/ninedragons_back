@@ -47,6 +47,7 @@ const (
 	GSMsgRejoinGame  GSMessageType = "gs_rejoin_game"
 	GSMsgSubmitSetup GSMessageType = "gs_submit_setup"
 	GSMsgMove        GSMessageType = "gs_move"
+	GSMsgRematch     GSMessageType = "gs_rematch"
 
 	// 서버 → 클라이언트
 	GSMsgPlayerJoined         GSMessageType = "gs_player_joined"
@@ -54,6 +55,7 @@ const (
 	GSMsgGameState            GSMessageType = "gs_game_state"
 	GSMsgEvent                GSMessageType = "gs_event"
 	GSMsgGameOver             GSMessageType = "gs_game_over"
+	GSMsgRematchOffer         GSMessageType = "gs_rematch_offer"
 	GSMsgOpponentDisconnected GSMessageType = "gs_opponent_disconnected"
 	GSMsgOpponentReconnected  GSMessageType = "gs_opponent_reconnected"
 	GSMsgSessionExpired       GSMessageType = "gs_session_expired"

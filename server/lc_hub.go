@@ -14,6 +14,10 @@ import (
 type lcRoom struct {
 	Game    *LCGame
 	Clients map[LCSide]*LCClient
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[LCSide]bool
+	CleanupTimer *time.Timer
 }
 
 type LCHub struct {
@@ -35,6 +39,9 @@ type LCHub struct {
 	// 게임 메시지
 	gameMessage chan LCGameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*LCClient]
 
@@ -54,6 +61,7 @@ func NewLCHub() *LCHub {
 		clients:        make(map[*LCClient]bool),
 		rooms:          make(map[string]*lcRoom),
 		gameMessage:    make(chan LCGameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*LCClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -80,6 +88,9 @@ func (h *LCHub) Run() {
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
 
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
+
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
 		}
@@ -94,6 +105,8 @@ func (h *LCHub) handleGameMessage(gm LCGameMessage) {
 		h.handleRejoin(gm.Client, gm.Message)
 	case LCMsgMove:
 		h.handleMove(gm.Client, gm.Message)
+	case LCMsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -322,8 +335,99 @@ func (h *LCHub) finishIfOver(room *lcRoom) {
 	log.Printf("[로스트시티][경기결과] game=%s | %s | 남 %d : 북 %d | 소요=%s",
 		game.ID, resultLabel, game.Score(LCSouth), game.Score(LCNorth), matchDuration(game.StartedAt))
 
-	h.clearGameSessions(room)
-	delete(h.rooms, game.ID)
+	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+	room.Rematch = map[LCSide]bool{}
+	gameID := game.ID
+	room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 봇전은 즉시, 사람전은 양쪽 신청 시 재시작.
+func (h *LCHub) handleRematch(client *LCClient) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Phase != LCPhaseGameOver || room.CleanupTimer == nil {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[LCSide]bool{}
+	}
+	room.Rematch[client.Side] = true
+
+	opponent := room.Clients[lcOther(client.Side)]
+	if (opponent != nil && opponent.Bot) || room.Rematch[lcOther(client.Side)] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent != nil {
+		h.sendToClient(opponent, LCMessage{Type: LCMsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지, 봇은 재소환)
+func (h *LCHub) restartRematch(room *lcRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*LCClient{}
+	hadBot := false
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if c.Bot {
+			hadBot = true
+			h.drop(c.SessionID)
+		} else {
+			humans = append(humans, c)
+		}
+	}
+
+	game := NewLCGame(room.Game.ID)
+	room.Game = game
+	room.Clients = map[LCSide]*LCClient{}
+	for _, c := range humans {
+		side, err := game.AddPlayer(c.Name)
+		if err != nil {
+			continue
+		}
+		c.Side = side
+		room.Clients[side] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, LCMessage{
+			Type: LCMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+	if hadBot {
+		h.spawnBot(room)
+	}
+
+	log.Printf("[로스트시티][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *LCHub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil || room.Game.Phase != LCPhaseGameOver {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if !c.Bot {
+			h.sendToClient(c, LCMessage{Type: LCMsgSessionExpired})
+		}
+		h.drop(c.SessionID)
+	}
+	delete(h.rooms, gameID)
 }
 
 // ==================== 재접속 / 연결 끊김 ====================

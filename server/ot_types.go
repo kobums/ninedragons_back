@@ -46,6 +46,7 @@ const (
 	OTMsgRejoinGame OTMessageType = "ot_rejoin_game"
 	OTMsgMove       OTMessageType = "ot_move"
 	OTMsgPass       OTMessageType = "ot_pass"
+	OTMsgRematch    OTMessageType = "ot_rematch"
 
 	// 서버 → 클라이언트
 	OTMsgPlayerJoined         OTMessageType = "ot_player_joined"
@@ -53,6 +54,7 @@ const (
 	OTMsgGameState            OTMessageType = "ot_game_state"
 	OTMsgEvent                OTMessageType = "ot_event"
 	OTMsgGameOver             OTMessageType = "ot_game_over"
+	OTMsgRematchOffer         OTMessageType = "ot_rematch_offer"
 	OTMsgOpponentDisconnected OTMessageType = "ot_opponent_disconnected"
 	OTMsgOpponentReconnected  OTMessageType = "ot_opponent_reconnected"
 	OTMsgSessionExpired       OTMessageType = "ot_session_expired"

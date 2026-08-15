@@ -58,6 +58,7 @@ const (
 	CSMsgRoll       CSMessageType = "cs_roll"
 	CSMsgChoose     CSMessageType = "cs_choose"
 	CSMsgStop       CSMessageType = "cs_stop"
+	CSMsgRematch    CSMessageType = "cs_rematch"
 
 	// 서버 → 클라이언트
 	CSMsgPlayerJoined         CSMessageType = "cs_player_joined"
@@ -65,6 +66,7 @@ const (
 	CSMsgGameState            CSMessageType = "cs_game_state"
 	CSMsgEvent                CSMessageType = "cs_event"
 	CSMsgGameOver             CSMessageType = "cs_game_over"
+	CSMsgRematchOffer         CSMessageType = "cs_rematch_offer"
 	CSMsgOpponentDisconnected CSMessageType = "cs_opponent_disconnected"
 	CSMsgOpponentReconnected  CSMessageType = "cs_opponent_reconnected"
 	CSMsgSessionExpired       CSMessageType = "cs_session_expired"

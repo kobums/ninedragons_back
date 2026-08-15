@@ -54,6 +54,7 @@ const (
 	LCMsgJoinGame   LCMessageType = "lc_join_game"
 	LCMsgRejoinGame LCMessageType = "lc_rejoin_game"
 	LCMsgMove       LCMessageType = "lc_move"
+	LCMsgRematch    LCMessageType = "lc_rematch"
 
 	// 서버 → 클라이언트
 	LCMsgPlayerJoined         LCMessageType = "lc_player_joined"
@@ -61,6 +62,7 @@ const (
 	LCMsgGameState            LCMessageType = "lc_game_state"
 	LCMsgEvent                LCMessageType = "lc_event"
 	LCMsgGameOver             LCMessageType = "lc_game_over"
+	LCMsgRematchOffer         LCMessageType = "lc_rematch_offer"
 	LCMsgOpponentDisconnected LCMessageType = "lc_opponent_disconnected"
 	LCMsgOpponentReconnected  LCMessageType = "lc_opponent_reconnected"
 	LCMsgSessionExpired       LCMessageType = "lc_session_expired"

@@ -14,6 +14,10 @@ import (
 type otRoom struct {
 	Game    *OTGame
 	Clients map[OTSide]*OTClient
+
+	// ---- 재대결 창 (게임 종료 후) ----
+	Rematch      map[OTSide]bool
+	CleanupTimer *time.Timer
 }
 
 type OTHub struct {
@@ -35,6 +39,9 @@ type OTHub struct {
 	// 게임 메시지
 	gameMessage chan OTGameMessage
 
+	// 재대결 창 만료 알림 (gameID)
+	roomExpired chan string
+
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*OTClient]
 
@@ -54,6 +61,7 @@ func NewOTHub() *OTHub {
 		clients:        make(map[*OTClient]bool),
 		rooms:          make(map[string]*otRoom),
 		gameMessage:    make(chan OTGameMessage),
+		roomExpired:    make(chan string, 8),
 		sessionManager: newSessionManager[*OTClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -80,6 +88,9 @@ func (h *OTHub) Run() {
 		case sessionID := <-h.graceExpired:
 			h.handleGraceExpired(sessionID)
 
+		case gameID := <-h.roomExpired:
+			h.handleRoomExpired(gameID)
+
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
 		}
@@ -96,6 +107,8 @@ func (h *OTHub) handleGameMessage(gm OTGameMessage) {
 		h.handleMove(gm.Client, gm.Message)
 	case OTMsgPass:
 		h.handlePass(gm.Client, gm.Message)
+	case OTMsgRematch:
+		h.handleRematch(gm.Client)
 	}
 }
 
@@ -348,8 +361,99 @@ func (h *OTHub) finishIfOver(room *otRoom) {
 		game.ID, displayName(game.Names[game.Winner]), otSideLabel(game.Winner),
 		otEndReasonLabel(game.EndReason), matchDuration(game.StartedAt))
 
-	h.clearGameSessions(room)
-	delete(h.rooms, game.ID)
+	// 재대결 창: 방·세션을 잠시 유지하고 재대결 신청을 기다린다
+	room.Rematch = map[OTSide]bool{}
+	gameID := game.ID
+	room.CleanupTimer = time.AfterFunc(rematchWindow, func() { h.roomExpired <- gameID })
+}
+
+// handleRematch 게임 종료 후 재대결 신청. 봇전은 즉시, 사람전은 양쪽 신청 시 재시작.
+func (h *OTHub) handleRematch(client *OTClient) {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Phase != OTPhaseGameOver || room.CleanupTimer == nil {
+		return
+	}
+	if room.Rematch == nil {
+		room.Rematch = map[OTSide]bool{}
+	}
+	room.Rematch[client.Side] = true
+
+	opponent := room.Clients[otOther(client.Side)]
+	if (opponent != nil && opponent.Bot) || room.Rematch[otOther(client.Side)] {
+		h.restartRematch(room)
+		return
+	}
+	if opponent != nil {
+		h.sendToClient(opponent, OTMessage{Type: OTMsgRematchOffer})
+	}
+}
+
+// restartRematch 같은 방에서 새 게임을 시작한다 (연결·세션 유지, 봇은 재소환)
+func (h *OTHub) restartRematch(room *otRoom) {
+	if room.CleanupTimer != nil {
+		room.CleanupTimer.Stop()
+		room.CleanupTimer = nil
+	}
+	room.Rematch = nil
+
+	humans := []*OTClient{}
+	hadBot := false
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if c.Bot {
+			hadBot = true
+			h.drop(c.SessionID)
+		} else {
+			humans = append(humans, c)
+		}
+	}
+
+	game := NewOTGame(room.Game.ID)
+	room.Game = game
+	room.Clients = map[OTSide]*OTClient{}
+	for _, c := range humans {
+		side, err := game.AddPlayer(c.Name)
+		if err != nil {
+			continue
+		}
+		c.Side = side
+		room.Clients[side] = c
+		// 프론트가 세션 키를 다시 저장하도록 입장 확인을 재전송한다
+		h.sendToClient(c, OTMessage{
+			Type: OTMsgPlayerJoined,
+			Payload: map[string]interface{}{
+				"yourSide":  side,
+				"gameId":    game.ID,
+				"sessionId": c.SessionID,
+			},
+		})
+	}
+	if hadBot {
+		h.spawnBot(room)
+	}
+
+	log.Printf("[오니타마][재대결] game=%s | 같은 방에서 재시작", game.ID)
+	h.startGame(room)
+}
+
+// handleRoomExpired 재대결 창이 지나도록 신청이 없으면 방·세션 정리
+func (h *OTHub) handleRoomExpired(gameID string) {
+	room := h.rooms[gameID]
+	if room == nil || room.Game.Phase != OTPhaseGameOver {
+		return
+	}
+	for _, c := range room.Clients {
+		if c == nil {
+			continue
+		}
+		if !c.Bot {
+			h.sendToClient(c, OTMessage{Type: OTMsgSessionExpired})
+		}
+		h.drop(c.SessionID)
+	}
+	delete(h.rooms, gameID)
 }
 
 // ==================== 재접속 / 연결 끊김 ====================
