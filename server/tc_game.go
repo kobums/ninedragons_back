@@ -135,6 +135,21 @@ func tcContainsCard(cards []string, card string) bool {
 	return false
 }
 
+// tcRankLabel 사람이 읽는 랭크 표기 — 소원 안내·에러 문구용 (11~14 = J/Q/K/A)
+func tcRankLabel(rank int) string {
+	switch rank {
+	case 11:
+		return "J"
+	case 12:
+		return "Q"
+	case 13:
+		return "K"
+	case 14:
+		return "A"
+	}
+	return fmt.Sprintf("%d", rank)
+}
+
 // tcContainsRank 자연 카드(봉황 제외)로 해당 랭크를 포함하는지 — 소원 이행 판정
 func tcContainsRank(cards []string, rank int) bool {
 	for _, c := range cards {
@@ -1029,7 +1044,7 @@ func (g *TCGame) Play(seat int, cards []string, wish int) (*tcPlayResult, error)
 		// 소원 강제: 이행 가능한 수가 있으면 반드시 소원 숫자를 포함해야 한다
 		if g.WishRank >= 2 && !tcContainsRank(cards, g.WishRank) {
 			if _, forced := tcEnumerate(g.Hands[seat], prev, g.WishRank); forced {
-				return nil, fmt.Errorf("소원(%d)을 포함한 수를 내야 합니다", g.WishRank)
+				return nil, fmt.Errorf("소원(%s)을 포함한 수를 내야 합니다", tcRankLabel(g.WishRank))
 			}
 		}
 	}

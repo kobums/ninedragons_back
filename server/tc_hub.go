@@ -387,7 +387,7 @@ func (h *TCHub) handlePlay(client *TCClient, msg TCMessage) {
 
 	if res.WishSet > 0 {
 		h.broadcastEvent(room, TCEventPayload{Kind: "wish", Seat: &seat,
-			Message: fmt.Sprintf("소원: %d", res.WishSet)})
+			Message: fmt.Sprintf("소원: %s", tcRankLabel(res.WishSet))})
 	}
 	if res.WishDone {
 		h.broadcastEvent(room, TCEventPayload{Kind: "wish_done", Seat: &seat,
