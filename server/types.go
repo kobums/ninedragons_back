@@ -184,9 +184,10 @@ type NCClient struct {
 }
 
 // NCGame 넘버체인지 게임
+// NCGame (순수 상태 — 연결은 ncRoom 이 든다)
 type NCGame struct {
 	ID              string
-	Players         map[TeamColor]*NCClient
+	Names           map[TeamColor]string
 	CurrentRound    int
 	Team1Score      int
 	Team2Score      int

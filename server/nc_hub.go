@@ -9,15 +9,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// ncRoom 게임(순수 상태)과 팀별 연결의 매핑
+type ncRoom struct {
+	Game    *NCGame
+	Clients map[TeamColor]*NCClient
+}
+
 type NCHub struct {
 	// 등록된 클라이언트
 	clients map[*NCClient]bool
 
-	// 게임 목록
-	games map[string]*NCGame
+	// 진행/대기 중인 방 (gameID → room)
+	rooms map[string]*ncRoom
 
-	// 대기 중인 게임
-	waitingGame *NCGame
+	// 상대를 기다리는 방
+	waitingRoom *ncRoom
 
 	// 클라이언트 등록
 	register chan *NCClient
@@ -42,7 +48,7 @@ func NewNCHub() *NCHub {
 		register:       make(chan *NCClient),
 		unregister:     make(chan *NCClient),
 		clients:        make(map[*NCClient]bool),
-		games:          make(map[string]*NCGame),
+		rooms:          make(map[string]*ncRoom),
 		gameMessage:    make(chan NCGameMessage),
 		sessionManager: newSessionManager[*NCClient](),
 	}
@@ -85,17 +91,17 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 		return
 	}
 
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		h.drop(client.SessionID)
 		return
 	}
 
 	// 상대를 기다리던 게임은 유지할 이유가 없으니 즉시 정리
-	if !game.Ready {
-		delete(h.games, game.ID)
-		if h.waitingGame != nil && h.waitingGame.ID == game.ID {
-			h.waitingGame = nil
+	if !room.Game.Ready {
+		delete(h.rooms, room.Game.ID)
+		if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
+			h.waitingRoom = nil
 		}
 		h.drop(client.SessionID)
 		return
@@ -103,9 +109,9 @@ func (h *NCHub) handleDisconnect(client *NCClient) {
 
 	// 진행 중인 게임: 유예 시간 동안 세션을 유지하고 재접속을 기다린다
 	log.Printf("[넘버체인지][연결끊김] game=%s | %s=%s 재접속 대기 시작 (%.0f초)",
-		game.ID, teamLabel(client.Team), displayName(client.Name), h.grace.Seconds())
+		room.Game.ID, teamLabel(client.Team), displayName(client.Name), h.grace.Seconds())
 
-	if opponent := h.opponentOf(game, client.Team); opponent != nil {
+	if opponent := h.opponentOf(room, client.Team); opponent != nil {
 		h.sendToClient(opponent, NCMessage{
 			Type: NCMsgOpponentDisconnected,
 			Payload: NCOpponentDisconnectedPayload{
@@ -125,15 +131,15 @@ func (h *NCHub) handleGraceExpired(sessionID string) {
 		return
 	}
 
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		return
 	}
 
 	log.Printf("[넘버체인지][재접속실패] game=%s | %s=%s 유예 시간 만료로 게임 종료",
-		game.ID, teamLabel(client.Team), displayName(client.Name))
+		room.Game.ID, teamLabel(client.Team), displayName(client.Name))
 
-	if opponent := h.opponentOf(game, client.Team); opponent != nil {
+	if opponent := h.opponentOf(room, client.Team); opponent != nil {
 		h.sendToClient(opponent, NCMessage{
 			Type: NCMsgError,
 			Payload: NCErrorPayload{
@@ -146,9 +152,9 @@ func (h *NCHub) handleGraceExpired(sessionID string) {
 		opponent.GameID = ""
 	}
 
-	delete(h.games, game.ID)
-	if h.waitingGame != nil && h.waitingGame.ID == game.ID {
-		h.waitingGame = nil
+	delete(h.rooms, room.Game.ID)
+	if h.waitingRoom != nil && h.waitingRoom.Game.ID == room.Game.ID {
+		h.waitingRoom = nil
 	}
 }
 
@@ -177,8 +183,8 @@ func (h *NCHub) handleRejoin(client *NCClient, msg NCMessage) {
 		return
 	}
 
-	game := h.games[old.GameID]
-	if game == nil || !game.Ready {
+	room := h.rooms[old.GameID]
+	if room == nil || !room.Game.Ready {
 		h.drop(payload.SessionID)
 		h.sendToClient(client, NCMessage{Type: NCMsgSessionExpired})
 		return
@@ -198,31 +204,32 @@ func (h *NCHub) handleRejoin(client *NCClient, msg NCMessage) {
 	client.GameID = old.GameID
 	client.Team = old.Team
 	h.sessions[client.SessionID] = client
-	game.Players[client.Team] = client
+	room.Clients[client.Team] = client
 
 	log.Printf("[넘버체인지][재접속] game=%s | %s=%s 재접속 완료",
-		game.ID, teamLabel(client.Team), displayName(client.Name))
+		room.Game.ID, teamLabel(client.Team), displayName(client.Name))
 
-	if opponent := h.opponentOf(game, client.Team); opponent != nil {
+	if opponent := h.opponentOf(room, client.Team); opponent != nil {
 		h.sendToClient(opponent, NCMessage{Type: NCMsgOpponentReconnected})
 	}
 
 	// 현재 게임 상태 전체를 내려서 클라이언트 상태를 복원시킨다
 	h.sendToClient(client, NCMessage{
 		Type:    NCMsgGameState,
-		Payload: h.buildGameState(game, client.Team),
+		Payload: h.buildGameState(room, client.Team),
 	})
 }
 
 // buildGameState 재접속 복원용 게임 상태 스냅샷
-func (h *NCHub) buildGameState(game *NCGame, yourTeam TeamColor) NCGameStatePayload {
+func (h *NCHub) buildGameState(room *ncRoom, yourTeam TeamColor) NCGameStatePayload {
+	game := room.Game
 	opponentTeam := Team1
 	if yourTeam == Team1 {
 		opponentTeam = Team2
 	}
 
 	opponentConnected := false
-	if opponent := game.Players[opponentTeam]; opponent != nil && opponent.Connected {
+	if opponent := room.Clients[opponentTeam]; opponent != nil && opponent.Connected {
 		opponentConnected = true
 	}
 
@@ -246,8 +253,8 @@ func (h *NCHub) buildGameState(game *NCGame, yourTeam TeamColor) NCGameStatePayl
 		CurrentRound:                game.CurrentRound,
 		Team1Score:                  game.Team1Score,
 		Team2Score:                  game.Team2Score,
-		Team1Name:                   ncClientName(game.Players[Team1]),
-		Team2Name:                   ncClientName(game.Players[Team2]),
+		Team1Name:                   game.Names[Team1],
+		Team2Name:                   game.Names[Team2],
 		CurrentTeam:                 game.CurrentTeam,
 		YourBlocks:                  yourBlocks,
 		OpponentBlocks:              opponentBlocks,
@@ -262,9 +269,9 @@ func (h *NCHub) buildGameState(game *NCGame, yourTeam TeamColor) NCGameStatePayl
 	}
 }
 
-// opponentOf 게임에서 해당 팀의 상대 플레이어
-func (h *NCHub) opponentOf(game *NCGame, team TeamColor) *NCClient {
-	for t, player := range game.Players {
+// opponentOf 방에서 해당 팀의 상대 플레이어
+func (h *NCHub) opponentOf(room *ncRoom, team TeamColor) *NCClient {
+	for t, player := range room.Clients {
 		if t != team {
 			return player
 		}
@@ -273,8 +280,8 @@ func (h *NCHub) opponentOf(game *NCGame, team TeamColor) *NCClient {
 }
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
-func (h *NCHub) clearGameSessions(game *NCGame) {
-	for _, player := range game.Players {
+func (h *NCHub) clearGameSessions(room *ncRoom) {
+	for _, player := range room.Clients {
 		if player == nil {
 			continue
 		}
@@ -300,32 +307,34 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	client.SessionID = uuid.New().String()
 	h.sessions[client.SessionID] = client
 
-	var game *NCGame
+	var room *ncRoom
 
 	// 대기 중인 게임이 있으면 참가, 없으면 새로 생성
-	if h.waitingGame == nil {
+	if h.waitingRoom == nil {
 		gameID := uuid.New().String()
-		game = NewNCGame(gameID)
-		h.waitingGame = game
-		h.games[game.ID] = game
-		log.Printf("[NC] Created new game %s", game.ID)
+		room = &ncRoom{Game: NewNCGame(gameID), Clients: map[TeamColor]*NCClient{}}
+		h.waitingRoom = room
+		h.rooms[room.Game.ID] = room
+		log.Printf("[NC] Created new game %s", room.Game.ID)
 	} else {
-		game = h.waitingGame
-		h.waitingGame = nil // 게임이 가득 찼으므로 대기 게임 초기화
-		log.Printf("[NC] Joining existing game %s", game.ID)
+		room = h.waitingRoom
+		h.waitingRoom = nil // 게임이 가득 찼으므로 대기 게임 초기화
+		log.Printf("[NC] Joining existing game %s", room.Game.ID)
 	}
 
+	game := room.Game
 	client.GameID = game.ID
 
 	// 플레이어 팀 배정
-	team := game.AddPlayer(client, payload.Team)
+	team := game.AddPlayer(client.Name, payload.Team)
 	client.Team = team
+	room.Clients[team] = client
 
 	log.Printf("[넘버체인지][입장] game=%s | %s=%s 게임 입장 (%d/2)",
-		game.ID, teamLabel(team), displayName(client.Name), len(game.Players))
+		game.ID, teamLabel(team), displayName(client.Name), len(room.Clients))
 
 	notify("넘버체인지 참가", fmt.Sprintf("%s(%s) 입장 (%d/2)",
-		displayName(client.Name), teamLabel(team), len(game.Players)))
+		displayName(client.Name), teamLabel(team), len(room.Clients)))
 
 	// 플레이어에게 자신의 팀 알림
 	h.sendToClient(client, NCMessage{
@@ -340,17 +349,11 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	// 게임 시작 확인
 	if game.IsReady() && !game.Ready {
 		game.Start()
-		log.Printf("[NC] Game %s is ready! Starting game with %d players", game.ID, len(game.Players))
+		log.Printf("[NC] Game %s is ready! Starting game with %d players", game.ID, len(room.Clients))
 
 		// 플레이어 이름 가져오기
-		team1Name := ""
-		team2Name := ""
-		if p := game.Players[Team1]; p != nil {
-			team1Name = p.Name
-		}
-		if p := game.Players[Team2]; p != nil {
-			team2Name = p.Name
-		}
+		team1Name := game.Names[Team1]
+		team2Name := game.Names[Team2]
 
 		// 경기 시작 로그 (닉네임)
 		log.Printf("[넘버체인지][경기시작] game=%s | 팀1=%s | 팀2=%s | 선공=%s",
@@ -360,7 +363,7 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 			displayName(team1Name), displayName(team2Name)))
 
 		// 두 플레이어 모두에게 게임 시작 알림
-		for playerTeam, player := range game.Players {
+		for playerTeam, player := range room.Clients {
 			h.sendToClient(player, NCMessage{
 				Type: NCMsgGameStart,
 				Payload: NCGameStartPayload{
@@ -372,7 +375,7 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 			})
 		}
 	} else {
-		log.Printf("[NC] Game %s waiting for more players. Current: %d", game.ID, len(game.Players))
+		log.Printf("[NC] Game %s waiting for more players. Current: %d", game.ID, len(room.Clients))
 		// 대기 중 메시지
 		h.sendToClient(client, NCMessage{
 			Type: NCMsgWaitingPlayer,
@@ -384,8 +387,8 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 }
 
 func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		h.sendToClient(client, NCMessage{
 			Type: NCMsgError,
 			Payload: NCErrorPayload{
@@ -395,6 +398,7 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 		return
 	}
 
+	game := room.Game
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload NCSubmitBlocksPayload
 	json.Unmarshal(payloadBytes, &payload)
@@ -422,7 +426,7 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 			opponentTeam = Team1
 		}
 
-		if opponentClient := game.Players[opponentTeam]; opponentClient != nil {
+		if opponentClient := room.Clients[opponentTeam]; opponentClient != nil {
 			h.sendToClient(opponentClient, NCMessage{
 				Type: NCMsgUseHidden,
 				Payload: map[string]interface{}{
@@ -436,11 +440,12 @@ func (h *NCHub) handleSubmitBlocks(client *NCClient, msg NCMessage) {
 	// 제출·블록 선택이 모두 끝났으면 라운드 처리
 	// (히든 사용 시 필요한 블록 선택은 제출 페이로드에 포함돼 오거나
 	//  이후 nc_select_block으로 도착한다 — ReadyToProcess가 두 경우 모두 판별)
-	h.tryProcessRound(game)
+	h.tryProcessRound(room)
 }
 
 // tryProcessRound 필요한 제출·블록 선택이 모두 끝났을 때만 라운드를 처리하고 결과를 전송
-func (h *NCHub) tryProcessRound(game *NCGame) {
+func (h *NCHub) tryProcessRound(room *ncRoom) {
+	game := room.Game
 	if !game.ReadyToProcess() {
 		return
 	}
@@ -452,7 +457,7 @@ func (h *NCHub) tryProcessRound(game *NCGame) {
 	}
 
 	// 라운드 결과 전송
-	h.broadcastToGame(game, NCMessage{
+	h.broadcastToRoom(room, NCMessage{
 		Type:    NCMsgRoundResult,
 		Payload: result,
 	})
@@ -464,7 +469,7 @@ func (h *NCHub) tryProcessRound(game *NCGame) {
 	}
 
 	winner := game.GetWinner()
-	h.broadcastToGame(game, NCMessage{
+	h.broadcastToRoom(room, NCMessage{
 		Type: NCMsgGameOver,
 		Payload: NCGameOverPayload{
 			Winner:     winner,
@@ -475,14 +480,14 @@ func (h *NCHub) tryProcessRound(game *NCGame) {
 	})
 
 	// 게임 종료 처리
-	h.clearGameSessions(game)
-	delete(h.games, game.ID)
+	h.clearGameSessions(room)
+	delete(h.rooms, game.ID)
 	h.logMatchResult(game, winner, reason)
 }
 
 func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
-	game := h.games[client.GameID]
-	if game == nil {
+	room := h.rooms[client.GameID]
+	if room == nil {
 		h.sendToClient(client, NCMessage{
 			Type: NCMsgError,
 			Payload: NCErrorPayload{
@@ -508,20 +513,20 @@ func (h *NCHub) handleSelectBlock(client *NCClient, msg NCMessage) {
 	}
 
 	// 이미 제출한 상태에서 블록 선택 업데이트
-	if submit := game.RoundSubmits[client.Team]; submit != nil {
+	if submit := room.Game.RoundSubmits[client.Team]; submit != nil {
 		submit.SelectedBlockChoice = payload.SelectedBlockChoice
 		log.Printf("[NC] Team %s updated block choice: %d", client.Team, payload.SelectedBlockChoice)
 
 		// 제출·블록 선택이 모두 끝났으면 라운드 처리
 		// (양팀 모두 히든을 쓴 경우 두 번째 선택이 도착할 때까지 기다린다)
-		h.tryProcessRound(game)
+		h.tryProcessRound(room)
 	}
 }
 
 // logMatchResult 경기 종료 결과 로그 (닉네임, 점수, 라운드, 소요 시간)
 func (h *NCHub) logMatchResult(game *NCGame, winner TeamColor, reason string) {
-	team1Name := displayName(ncClientName(game.Players[Team1]))
-	team2Name := displayName(ncClientName(game.Players[Team2]))
+	team1Name := displayName(game.Names[Team1])
+	team2Name := displayName(game.Names[Team2])
 
 	result := "무승부"
 	switch winner {
@@ -547,14 +552,6 @@ func teamLabel(team TeamColor) string {
 	return string(team)
 }
 
-// ncClientName 클라이언트 이름 (nil 안전)
-func ncClientName(client *NCClient) string {
-	if client == nil {
-		return ""
-	}
-	return client.Name
-}
-
 // ncEndReason 종료 사유 한글 표기
 func ncEndReason(reason string) string {
 	switch reason {
@@ -575,8 +572,8 @@ func (h *NCHub) sendToClient(client *NCClient, message NCMessage) {
 	sendTo(&client.wsClient, message, "[NC] ")
 }
 
-func (h *NCHub) broadcastToGame(game *NCGame, message NCMessage) {
-	for _, player := range game.Players {
+func (h *NCHub) broadcastToRoom(room *ncRoom, message NCMessage) {
+	for _, player := range room.Clients {
 		if player != nil {
 			h.sendToClient(player, message)
 		}

@@ -11,7 +11,7 @@ import (
 func NewNCGame(id string) *NCGame {
 	return &NCGame{
 		ID:           id,
-		Players:      make(map[TeamColor]*NCClient),
+		Names:        make(map[TeamColor]string),
 		CurrentRound: 1,
 		Team1Score:   0,
 		Team2Score:   0,
@@ -26,20 +26,22 @@ func NewNCGame(id string) *NCGame {
 }
 
 // AddPlayer 플레이어 추가
-func (g *NCGame) AddPlayer(client *NCClient, preferredTeam TeamColor) TeamColor {
+func (g *NCGame) AddPlayer(name string, preferredTeam TeamColor) TeamColor {
 	// 선호하는 팀이 비어있으면 해당 팀에 배정
-	if preferredTeam != "" && g.Players[preferredTeam] == nil {
-		g.Players[preferredTeam] = client
-		return preferredTeam
+	if preferredTeam != "" {
+		if _, taken := g.Names[preferredTeam]; !taken {
+			g.Names[preferredTeam] = name
+			return preferredTeam
+		}
 	}
 
 	// 선호하는 팀이 없거나 이미 차있으면 빈 팀에 배정
-	if g.Players[Team1] == nil {
-		g.Players[Team1] = client
+	if _, taken := g.Names[Team1]; !taken {
+		g.Names[Team1] = name
 		return Team1
 	}
-	if g.Players[Team2] == nil {
-		g.Players[Team2] = client
+	if _, taken := g.Names[Team2]; !taken {
+		g.Names[Team2] = name
 		return Team2
 	}
 
@@ -50,7 +52,7 @@ func (g *NCGame) AddPlayer(client *NCClient, preferredTeam TeamColor) TeamColor 
 
 // IsReady 게임 시작 준비 확인
 func (g *NCGame) IsReady() bool {
-	return len(g.Players) == 2
+	return len(g.Names) == 2
 }
 
 // Start 게임 시작
@@ -216,16 +218,16 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 
 	// 라운드 히스토리 저장
 	history := NCRoundHistory{
-		Round:             g.CurrentRound,
-		Team1Block1:       team1Submit.Block1,
-		Team1Block2:       team1Submit.Block2,
-		Team1Total:        team1Total,
-		Team2Block1:       team2Submit.Block1,
-		Team2Block2:       team2Submit.Block2,
-		Team2Total:        team2Total,
-		Winner:            winner,
-		Team1Hidden:       team1Submit.UseHidden,
-		Team2Hidden:       team2Submit.UseHidden,
+		Round:              g.CurrentRound,
+		Team1Block1:        team1Submit.Block1,
+		Team1Block2:        team1Submit.Block2,
+		Team1Total:         team1Total,
+		Team2Block1:        team2Submit.Block1,
+		Team2Block2:        team2Submit.Block2,
+		Team2Total:         team2Total,
+		Winner:             winner,
+		Team1Hidden:        team1Submit.UseHidden,
+		Team2Hidden:        team2Submit.UseHidden,
 		Team1ReceivedBlock: team1ReceivedBlock,
 		Team2ReceivedBlock: team2ReceivedBlock,
 	}
@@ -249,21 +251,21 @@ func (g *NCGame) ProcessRound() (*NCRoundResultPayload, error) {
 
 	// 결과 페이로드 생성 (nextTeam 포함)
 	result := &NCRoundResultPayload{
-		Round:             g.CurrentRound - 1, // 방금 끝난 라운드 번호
-		Team1Block1:       team1Submit.Block1,
-		Team1Block2:       team1Submit.Block2,
-		Team1Total:        team1Total,
-		Team2Block1:       team2Submit.Block1,
-		Team2Block2:       team2Submit.Block2,
-		Team2Total:        team2Total,
-		Winner:            winner,
-		Team1Score:        g.Team1Score,
-		Team2Score:        g.Team2Score,
-		Team1Hidden:       team1Submit.UseHidden,
-		Team2Hidden:       team2Submit.UseHidden,
+		Round:              g.CurrentRound - 1, // 방금 끝난 라운드 번호
+		Team1Block1:        team1Submit.Block1,
+		Team1Block2:        team1Submit.Block2,
+		Team1Total:         team1Total,
+		Team2Block1:        team2Submit.Block1,
+		Team2Block2:        team2Submit.Block2,
+		Team2Total:         team2Total,
+		Winner:             winner,
+		Team1Score:         g.Team1Score,
+		Team2Score:         g.Team2Score,
+		Team1Hidden:        team1Submit.UseHidden,
+		Team2Hidden:        team2Submit.UseHidden,
 		Team1ReceivedBlock: team1ReceivedBlock,
 		Team2ReceivedBlock: team2ReceivedBlock,
-		NextTeam:          nextTeam,
+		NextTeam:           nextTeam,
 	}
 
 	return result, nil
