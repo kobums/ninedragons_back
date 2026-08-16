@@ -159,9 +159,9 @@ func (h *SFHub) handleJoinGame(client *SFClient, msg SFMessage) {
 	h.sessions[client.SessionID] = client
 	room.Clients[seat] = client
 
-	log.Printf("[스카이폴][입장] game=%s | seat%d=%s 게임 입장 (%d/%d)",
+	log.Printf("[마피아][입장] game=%s | seat%d=%s 게임 입장 (%d/%d)",
 		room.Game.ID, seat, displayName(client.Name), len(room.Game.Players), SFMaxPlayers)
-	notify("스카이폴 참가", fmt.Sprintf("%s 입장 (%d/%d)",
+	notify("마피아 참가", fmt.Sprintf("%s 입장 (%d/%d)",
 		displayName(client.Name), len(room.Game.Players), SFMaxPlayers))
 
 	h.sendToClient(client, SFMessage{
@@ -281,10 +281,10 @@ func (h *SFHub) startGame(room *sfRoom) {
 	for _, p := range room.Game.Players {
 		names = append(names, displayName(p.Name))
 	}
-	log.Printf("[스카이폴][경기시작] game=%s | 인원=%d | %v",
+	log.Printf("[마피아][경기시작] game=%s | 인원=%d | %v",
 		room.Game.ID, len(room.Game.Players), names)
 	// 봇 채우기로 시작한 판도 포함해 시작 시점에 1회만 알린다
-	notify("스카이폴 게임 시작", fmt.Sprintf("%d인전 시작", len(room.Game.Players)))
+	notify("마피아 게임 시작", fmt.Sprintf("%d인전 시작", len(room.Game.Players)))
 
 	h.broadcastEvent(room, SFEventPayload{Kind: "started"})
 	h.broadcastEvent(room, SFEventPayload{Kind: "night_begin",
@@ -313,7 +313,7 @@ func (h *SFHub) removeFromLobby(room *sfRoom, client *SFClient) {
 	client.GameID = ""
 	client.Seat = -1
 
-	log.Printf("[스카이폴][퇴장] game=%s | %s 대기 퇴장 (%d/%d)",
+	log.Printf("[마피아][퇴장] game=%s | %s 대기 퇴장 (%d/%d)",
 		room.Game.ID, displayName(client.Name), len(room.Game.Players), SFMaxPlayers)
 
 	// 사람이 아무도 없으면 방 자체를 정리한다 (남은 봇 러너도 종료)
@@ -378,11 +378,11 @@ func (h *SFHub) resolveNight(room *sfRoom) {
 	if killed >= 0 {
 		seat := killed
 		msg := fmt.Sprintf("%s님이 살해당했습니다", game.Players[seat].Name)
-		log.Printf("[스카이폴][밤해소] game=%s | %d일차 | seat%d=%s 살해",
+		log.Printf("[마피아][밤해소] game=%s | %d일차 | seat%d=%s 살해",
 			game.ID, game.DayNo, seat, displayName(game.Players[seat].Name))
 		h.broadcastEvent(room, SFEventPayload{Kind: "day_result", Seat: &seat, Message: msg})
 	} else {
-		log.Printf("[스카이폴][밤해소] game=%s | %d일차 | 의사 세이브 — 사망자 없음",
+		log.Printf("[마피아][밤해소] game=%s | %d일차 | 의사 세이브 — 사망자 없음",
 			game.ID, game.DayNo)
 		h.broadcastEvent(room, SFEventPayload{Kind: "day_result", Message: "아무도 죽지 않았습니다"})
 	}
@@ -425,12 +425,12 @@ func (h *SFHub) resolveVotes(room *sfRoom) {
 	if game.Execution != nil && game.Execution.Seat >= 0 {
 		seat := game.Execution.Seat
 		role := game.Players[seat].Role
-		log.Printf("[스카이폴][처형] game=%s | %d일차 | seat%d=%s (%s)",
+		log.Printf("[마피아][처형] game=%s | %d일차 | seat%d=%s (%s)",
 			game.ID, game.DayNo, seat, displayName(game.Players[seat].Name), sfRoleLabel(role))
 		h.broadcastEvent(room, SFEventPayload{Kind: "executed", Seat: &seat,
 			Message: fmt.Sprintf("%s님이 처형되었습니다 — %s", game.Players[seat].Name, sfRoleLabel(role))})
 	} else {
-		log.Printf("[스카이폴][무처형] game=%s | %d일차 | 동률·전원 기권", game.ID, game.DayNo)
+		log.Printf("[마피아][무처형] game=%s | %d일차 | 동률·전원 기권", game.ID, game.DayNo)
 		h.broadcastEvent(room, SFEventPayload{Kind: "no_execution",
 			Message: "동률 또는 전원 기권 — 처형이 없습니다"})
 	}
@@ -603,7 +603,7 @@ func (h *SFHub) finishGame(room *sfRoom) {
 		},
 	})
 
-	log.Printf("[스카이폴][경기결과] game=%s | %s | 소요=%s",
+	log.Printf("[마피아][경기결과] game=%s | %s | 소요=%s",
 		game.ID, detail, matchDuration(game.StartedAt))
 
 	RecordMatch(MatchRecord{
@@ -644,7 +644,7 @@ func (h *SFHub) handleDisconnect(client *SFClient) {
 	}
 
 	// 진행 중: 유예 시간 동안 세션을 유지하고 재접속을 기다린다
-	log.Printf("[스카이폴][연결끊김] game=%s | seat%d=%s 재접속 대기 시작 (%.0f초)",
+	log.Printf("[마피아][연결끊김] game=%s | seat%d=%s 재접속 대기 시작 (%.0f초)",
 		room.Game.ID, client.Seat, displayName(client.Name), h.grace.Seconds())
 
 	h.broadcastToRoom(room, SFMessage{
@@ -674,7 +674,7 @@ func (h *SFHub) handleGraceExpired(sessionID string) {
 	}
 
 	seat := client.Seat
-	log.Printf("[스카이폴][봇대체] game=%s | seat%d=%s 유예 만료 → 연습봇 대체",
+	log.Printf("[마피아][봇대체] game=%s | seat%d=%s 유예 만료 → 연습봇 대체",
 		room.Game.ID, seat, displayName(client.Name))
 
 	bot := h.takeoverBot(room, seat, client.Name)
@@ -721,7 +721,7 @@ func (h *SFHub) handleRejoin(client *SFClient, msg SFMessage) {
 	h.sessions[client.SessionID] = client
 	room.Clients[client.Seat] = client
 
-	log.Printf("[스카이폴][재접속] game=%s | seat%d=%s 재접속 완료",
+	log.Printf("[마피아][재접속] game=%s | seat%d=%s 재접속 완료",
 		room.Game.ID, client.Seat, displayName(client.Name))
 
 	h.broadcastToRoom(room, SFMessage{
