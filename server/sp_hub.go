@@ -118,6 +118,8 @@ func (h *SPHub) handleGameMessage(gm SPGameMessage) {
 		h.handleStart(gm.Client)
 	case SPMsgSetTimer:
 		h.handleSetTimer(gm.Client, gm.Message)
+	case SPMsgSetCategory:
+		h.handleSetCategory(gm.Client, gm.Message)
 	case SPMsgRejoin:
 		h.handleRejoin(gm.Client, gm.Message)
 	case SPMsgGuess:
@@ -261,6 +263,28 @@ func (h *SPHub) handleSetTimer(client *SPClient, msg SPMessage) {
 	json.Unmarshal(payloadBytes, &payload)
 
 	if err := room.Game.SetTimer(payload.Minutes); err != nil {
+		h.sendError(client, err.Error())
+		return
+	}
+	h.broadcastState(room)
+}
+
+// handleSetCategory host 의 대기실 카테고리 선택 (랜덤/장소/직업/과일/음식/동물/스포츠)
+func (h *SPHub) handleSetCategory(client *SPClient, msg SPMessage) {
+	room := h.lobby
+	if room == nil || client.GameID != room.Game.ID {
+		h.sendError(client, "로비를 찾을 수 없습니다")
+		return
+	}
+	if client.Seat != h.hostSeat(room) {
+		h.sendError(client, "호스트만 카테고리를 바꿀 수 있습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload SPSetCategoryPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if err := room.Game.SetCategory(payload.Category); err != nil {
 		h.sendError(client, err.Error())
 		return
 	}
@@ -478,7 +502,7 @@ func (h *SPHub) buildSPState(room *spRoom, viewerSeat int) SPGameStatePayload {
 	location := ""
 	var locations []string
 	if game.Ready {
-		locations = spLocations
+		locations = game.Words()
 		if !isSpy {
 			location = game.Location
 		}
@@ -495,18 +519,20 @@ func (h *SPHub) buildSPState(room *spRoom, viewerSeat int) SPGameStatePayload {
 	}
 
 	return SPGameStatePayload{
-		GameID:       game.ID,
-		Phase:        game.Phase,
-		HostSeat:     h.hostSeat(room),
-		YourSeat:     viewerSeat,
-		TimerMinutes: game.TimerMinutes,
-		EndsAt:       endsAt,
-		Locations:    locations,
-		IsSpy:        isSpy,
-		Location:     location,
-		Players:      h.spPlayerViews(room),
-		Votes:        votes,
-		Result:       game.Result,
+		GameID:         game.ID,
+		Phase:          game.Phase,
+		HostSeat:       h.hostSeat(room),
+		YourSeat:       viewerSeat,
+		TimerMinutes:   game.TimerMinutes,
+		CategoryChoice: game.CategoryChoice,
+		Category:       game.Category,
+		EndsAt:         endsAt,
+		Locations:      locations,
+		IsSpy:          isSpy,
+		Location:       location,
+		Players:        h.spPlayerViews(room),
+		Votes:          votes,
+		Result:         game.Result,
 	}
 }
 
@@ -561,6 +587,7 @@ func (h *SPHub) finishGame(room *spRoom) {
 		Payload: SPGameOverPayload{
 			Winner:          res.Winner,
 			SpySeat:         res.SpySeat,
+			Category:        res.Category,
 			Location:        res.Location,
 			Reason:          res.Reason,
 			GuessedLocation: res.GuessedLocation,
@@ -569,8 +596,8 @@ func (h *SPHub) finishGame(room *spRoom) {
 		},
 	})
 
-	log.Printf("[스파이폴][경기결과] game=%s | %s | 장소=%s | 스파이=seat%d | 소요=%s",
-		game.ID, detail, game.Location, game.SpySeat, matchDuration(game.StartedAt))
+	log.Printf("[스파이폴][경기결과] game=%s | %s | %s=%s | 스파이=seat%d | 소요=%s",
+		game.ID, detail, game.Category, game.Location, game.SpySeat, matchDuration(game.StartedAt))
 
 	RecordMatch(MatchRecord{
 		Game:     "spyfall",

@@ -162,7 +162,7 @@ func TestSPEightBotsCompleteGame(t *testing.T) {
 			t.Fatalf("스파이 좌석 이상: %d", spySeat)
 		}
 		location, _ := over["location"].(string)
-		if !spValidLocation(location) {
+		if !spAnyValidWord(location) {
 			t.Fatalf("종료 발표 장소 이상: %q", location)
 		}
 		players := over["players"].([]interface{})
@@ -237,7 +237,7 @@ func TestSPHiddenState(t *testing.T) {
 	if spySeat < 0 {
 		t.Fatal("스파이가 없다")
 	}
-	if !spValidLocation(theLocation) {
+	if !spAnyValidWord(theLocation) {
 		t.Fatalf("배부 장소가 목록에 없다: %q", theLocation)
 	}
 
@@ -375,7 +375,7 @@ func TestSPRejoinRestore(t *testing.T) {
 	if isSpy && location != "" {
 		t.Fatalf("복원된 스파이 스냅샷에 location 이 있다: %q", location)
 	}
-	if !isSpy && !spValidLocation(location) {
+	if !isSpy && !spAnyValidWord(location) {
 		t.Fatalf("복원된 비스파이 location 이상: %q", location)
 	}
 }

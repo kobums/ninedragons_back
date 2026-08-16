@@ -14,10 +14,11 @@ import (
 
 func NewSPGame(id string) *SPGame {
 	return &SPGame{
-		ID:           id,
-		Phase:        SPPhaseWaiting,
-		TimerMinutes: SPDefaultTimerMinutes,
-		SpySeat:      -1,
+		ID:             id,
+		Phase:          SPPhaseWaiting,
+		TimerMinutes:   SPDefaultTimerMinutes,
+		CategoryChoice: SPCategoryRandom,
+		SpySeat:        -1,
 	}
 }
 
@@ -62,6 +63,25 @@ func (g *SPGame) SetTimer(minutes int) error {
 	return nil
 }
 
+// SetCategory host 의 대기실 카테고리 선택 (랜덤 또는 목록 중 하나)
+func (g *SPGame) SetCategory(category string) error {
+	if g.Ready {
+		return errors.New("이미 시작된 게임입니다")
+	}
+	if category != SPCategoryRandom {
+		if _, ok := spCategories[category]; !ok {
+			return errors.New("없는 카테고리입니다")
+		}
+	}
+	g.CategoryChoice = category
+	return nil
+}
+
+// Words 확정 카테고리의 단어 목록 (시작 전엔 nil)
+func (g *SPGame) Words() []string {
+	return spCategories[g.Category]
+}
+
 // Start 장소 1곳·스파이 1명을 무작위 배정하고 playing 으로 진입한다.
 // timerDur 는 허브가 spMinute(테스트 단축 var)로 환산해 넘긴다.
 func (g *SPGame) Start(rng *rand.Rand, timerDur time.Duration) error {
@@ -72,7 +92,12 @@ func (g *SPGame) Start(rng *rand.Rand, timerDur time.Duration) error {
 	if n < SPMinPlayers || n > SPMaxPlayers {
 		return fmt.Errorf("%d~%d인이 필요합니다", SPMinPlayers, SPMaxPlayers)
 	}
-	g.Location = spLocations[rng.Intn(len(spLocations))]
+	g.Category = g.CategoryChoice
+	if g.Category == SPCategoryRandom {
+		g.Category = spCategoryNames[rng.Intn(len(spCategoryNames))]
+	}
+	words := g.Words()
+	g.Location = words[rng.Intn(len(words))]
 	g.SpySeat = rng.Intn(n)
 	g.Phase = SPPhasePlaying
 	g.Ready = true
@@ -83,10 +108,22 @@ func (g *SPGame) Start(rng *rand.Rand, timerDur time.Duration) error {
 
 // ==================== 스파이 추리 ====================
 
-// spValidLocation 장소 목록과의 정확한 문자열 일치 (계약 — 근사 매칭 없음)
-func spValidLocation(location string) bool {
-	for _, l := range spLocations {
-		if l == location {
+// spAnyValidWord 어떤 카테고리에든 존재하는 단어인지 (테스트·검증용)
+func spAnyValidWord(word string) bool {
+	for _, words := range spCategories {
+		for _, w := range words {
+			if w == word {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// spValidWord 확정 카테고리 단어 목록과의 정확한 문자열 일치 (계약 — 근사 매칭 없음)
+func (g *SPGame) spValidWord(word string) bool {
+	for _, l := range g.Words() {
+		if l == word {
 			return true
 		}
 	}
@@ -102,8 +139,8 @@ func (g *SPGame) Guess(seat int, location string) error {
 	if seat != g.SpySeat {
 		return errors.New("스파이만 장소를 추리할 수 있습니다")
 	}
-	if !spValidLocation(location) {
-		return errors.New("장소 목록에 없는 장소입니다")
+	if !g.spValidWord(location) {
+		return errors.New("단어 목록에 없는 단어입니다")
 	}
 	if location == g.Location {
 		g.finish("spy", "guess_right", location, -1)
@@ -206,6 +243,7 @@ func (g *SPGame) finish(winner, reason, guessedLocation string, topSeat int) {
 	g.Result = &SPResultView{
 		Winner:          winner,
 		SpySeat:         g.SpySeat,
+		Category:        g.Category,
 		Location:        g.Location,
 		Reason:          reason,
 		GuessedLocation: guessedLocation,
@@ -218,9 +256,9 @@ func (g *SPGame) finish(winner, reason, guessedLocation string, topSeat int) {
 func spReasonLabel(reason string) string {
 	switch reason {
 	case "guess_right":
-		return "장소 적중"
+		return "정답 적중"
 	case "guess_wrong":
-		return "장소 오답"
+		return "추리 오답"
 	case "vote_caught":
 		return "스파이 검거"
 	case "vote_missed":

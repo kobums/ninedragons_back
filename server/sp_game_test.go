@@ -16,25 +16,73 @@ func newSPStartedGame(n, spySeat int, location string) *SPGame {
 	}
 	g.Phase = SPPhasePlaying
 	g.SpySeat = spySeat
+	g.Category = "장소"
 	g.Location = location
 	g.Ready = true
 	return g
 }
 
-// TestSPLocationList 장소 24곳 계약 — 개수·중복 없음
+// TestSPLocationList 카테고리 계약 — 이름 목록 일치, 각 24단어·중복 없음
 func TestSPLocationList(t *testing.T) {
-	if len(spLocations) != 24 {
-		t.Fatalf("장소 수 = %d, want 24", len(spLocations))
+	if len(spCategoryNames) != len(spCategories) {
+		t.Fatalf("카테고리 이름 %d개 vs 목록 %d개", len(spCategoryNames), len(spCategories))
 	}
-	seen := map[string]bool{}
-	for _, l := range spLocations {
-		if l == "" {
-			t.Fatal("빈 장소가 있다")
+	for _, name := range spCategoryNames {
+		words, ok := spCategories[name]
+		if !ok {
+			t.Fatalf("카테고리 누락: %s", name)
 		}
-		if seen[l] {
-			t.Fatalf("장소 중복: %s", l)
+		if len(words) != 24 {
+			t.Fatalf("%s 단어 수 = %d, want 24", name, len(words))
 		}
-		seen[l] = true
+		seen := map[string]bool{}
+		for _, w := range words {
+			if w == "" {
+				t.Fatalf("%s 에 빈 단어가 있다", name)
+			}
+			if seen[w] {
+				t.Fatalf("%s 단어 중복: %s", name, w)
+			}
+			seen[w] = true
+		}
+	}
+}
+
+// TestSPCategoryAssign 카테고리 배정 — 지정 카테고리 준수, 랜덤은 목록 중 하나
+func TestSPCategoryAssign(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	g := NewSPGame("c1")
+	for i := 0; i < 4; i++ {
+		g.AddPlayer(fmt.Sprintf("p%d", i))
+	}
+	if err := g.SetCategory("과일"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Start(rng, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if g.Category != "과일" {
+		t.Fatalf("카테고리 = %s, want 과일", g.Category)
+	}
+	if !g.spValidWord(g.Location) {
+		t.Fatalf("정답이 과일 목록에 없다: %q", g.Location)
+	}
+	if err := g.SetCategory("없는카테고리"); err == nil {
+		t.Fatal("없는 카테고리가 통과했다")
+	}
+
+	g2 := NewSPGame("c2")
+	for i := 0; i < 4; i++ {
+		g2.AddPlayer(fmt.Sprintf("p%d", i))
+	}
+	if g2.CategoryChoice != SPCategoryRandom {
+		t.Fatalf("기본 선택 = %s, want 랜덤", g2.CategoryChoice)
+	}
+	if err := g2.Start(rng, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := spCategories[g2.Category]; !ok {
+		t.Fatalf("랜덤 확정 카테고리 이상: %q", g2.Category)
 	}
 }
 
@@ -58,8 +106,8 @@ func TestSPStartAssignment(t *testing.T) {
 		if g.SpySeat < 0 || g.SpySeat >= n {
 			t.Fatalf("스파이 좌석 이상: %d (n=%d)", g.SpySeat, n)
 		}
-		if !spValidLocation(g.Location) {
-			t.Fatalf("장소가 목록에 없다: %q", g.Location)
+		if !g.spValidWord(g.Location) {
+			t.Fatalf("정답이 확정 카테고리 목록에 없다: %q", g.Location)
 		}
 		wantEnds := time.Now().Add(5 * time.Minute).UnixMilli()
 		if g.EndsAt < wantEnds-1000 || g.EndsAt > wantEnds+1000 {

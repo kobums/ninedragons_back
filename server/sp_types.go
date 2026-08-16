@@ -22,12 +22,48 @@ const (
 	SPDefaultTimerMinutes = 5
 )
 
-// spLocations 장소 24곳 — 프론트와 공유하는 계약. 순서·표기를 바꾸지 않는다.
-var spLocations = []string{
-	"병원", "학교", "은행", "해변", "카지노", "영화관", "지하철", "공항",
-	"우주정거장", "잠수함", "경찰서", "소방서", "유람선", "호텔", "대사관",
-	"슈퍼마켓", "레스토랑", "대학교", "군부대", "놀이공원", "목욕탕",
-	"결혼식장", "도서관", "야구장",
+// SPCategoryRandom 대기실 기본 선택 — 시작 시 카테고리를 무작위로 정한다
+const SPCategoryRandom = "랜덤"
+
+// spCategoryNames 카테고리 표시 순서 (프론트와 공유하는 계약)
+var spCategoryNames = []string{"장소", "직업", "과일", "음식", "동물", "스포츠"}
+
+// spCategories 카테고리별 단어 24개 — 프론트와 공유하는 계약. 순서·표기 불변.
+var spCategories = map[string][]string{
+	"장소": {
+		"병원", "학교", "은행", "해변", "카지노", "영화관", "지하철", "공항",
+		"우주정거장", "잠수함", "경찰서", "소방서", "유람선", "호텔", "대사관",
+		"슈퍼마켓", "레스토랑", "대학교", "군부대", "놀이공원", "목욕탕",
+		"결혼식장", "도서관", "야구장",
+	},
+	"직업": {
+		"의사", "교사", "소방관", "경찰관", "요리사", "프로그래머", "가수", "배우",
+		"화가", "농부", "어부", "파일럿", "간호사", "변호사", "판사", "군인",
+		"기자", "사진작가", "미용사", "택시기사", "우주비행사", "마술사",
+		"운동선수", "건축가",
+	},
+	"과일": {
+		"사과", "배", "포도", "수박", "참외", "딸기", "바나나", "오렌지",
+		"귤", "복숭아", "자두", "체리", "키위", "망고", "파인애플", "레몬",
+		"멜론", "블루베리", "석류", "감", "무화과", "코코넛", "용과", "리치",
+	},
+	"음식": {
+		"김치찌개", "된장찌개", "불고기", "비빔밥", "삼겹살", "치킨", "피자",
+		"햄버거", "짜장면", "짬뽕", "탕수육", "초밥", "라면", "떡볶이", "김밥",
+		"순대", "파스타", "스테이크", "카레", "냉면", "삼계탕", "갈비탕",
+		"족발", "보쌈",
+	},
+	"동물": {
+		"강아지", "고양이", "호랑이", "사자", "코끼리", "기린", "원숭이", "판다",
+		"토끼", "여우", "늑대", "곰", "하마", "악어", "펭귄", "돌고래",
+		"고래", "상어", "독수리", "부엉이", "뱀", "거북이", "캥거루", "낙타",
+	},
+	"스포츠": {
+		"축구", "야구", "농구", "배구", "테니스", "탁구", "배드민턴", "골프",
+		"수영", "마라톤", "양궁", "태권도", "유도", "복싱", "스키",
+		"스케이트", "컬링", "볼링", "당구", "클라이밍", "사이클", "펜싱",
+		"서핑", "요가",
+	},
 }
 
 // SPPhase 게임 진행 단계
@@ -45,13 +81,14 @@ type SPMessageType string
 
 const (
 	// 클라이언트 → 서버
-	SPMsgJoinGame SPMessageType = "sp_join_game"
-	SPMsgFillBots SPMessageType = "sp_fill_bots"
-	SPMsgStart    SPMessageType = "sp_start"
-	SPMsgSetTimer SPMessageType = "sp_set_timer"
-	SPMsgGuess    SPMessageType = "sp_guess"
-	SPMsgVote     SPMessageType = "sp_vote"
-	SPMsgRejoin   SPMessageType = "sp_rejoin"
+	SPMsgJoinGame    SPMessageType = "sp_join_game"
+	SPMsgFillBots    SPMessageType = "sp_fill_bots"
+	SPMsgStart       SPMessageType = "sp_start"
+	SPMsgSetTimer    SPMessageType = "sp_set_timer"
+	SPMsgSetCategory SPMessageType = "sp_set_category"
+	SPMsgGuess       SPMessageType = "sp_guess"
+	SPMsgVote        SPMessageType = "sp_vote"
+	SPMsgRejoin      SPMessageType = "sp_rejoin"
 
 	// 서버 → 클라이언트
 	SPMsgPlayerJoined         SPMessageType = "sp_player_joined"
@@ -98,7 +135,12 @@ type SPGame struct {
 	// 시작 전에는 -1.
 	SpySeat int
 
-	// Location 이번 판의 장소 (spLocations 중 1곳). 비스파이에게만 보인다.
+	// CategoryChoice 대기실에서 host 가 고른 카테고리 (기본 랜덤)
+	CategoryChoice string
+	// Category 시작 시 확정된 카테고리 (랜덤이면 시작 때 추첨)
+	Category string
+
+	// Location 이번 판의 정답 단어 (확정 카테고리 목록 중 1개). 비스파이에게만 보인다.
 	Location string
 
 	// EndsAt playing 타이머 종료 시각 (unixMillis) — 프론트 카운트다운 기준
@@ -126,6 +168,10 @@ type SPRejoinPayload struct {
 
 type SPSetTimerPayload struct {
 	Minutes int `json:"minutes"`
+}
+
+type SPSetCategoryPayload struct {
+	Category string `json:"category"`
 }
 
 type SPGuessPayload struct {
@@ -162,6 +208,7 @@ type SPVoteView struct {
 type SPResultView struct {
 	Winner          string `json:"winner"` // "spy" | "citizen"
 	SpySeat         int    `json:"spySeat"`
+	Category        string `json:"category"`
 	Location        string `json:"location"`
 	Reason          string `json:"reason"` // guess_right|guess_wrong|vote_caught|vote_missed
 	GuessedLocation string `json:"guessedLocation"`
@@ -172,18 +219,21 @@ type SPResultView struct {
 // 비스파이 스냅샷에는 스파이 좌석 정보가 어떤 형태로도 없어야 한다.
 // isSpy 는 본인 것만, location 은 비스파이에게만 채운다 (스파이·waiting 은 빈).
 type SPGameStatePayload struct {
-	GameID       string         `json:"gameId"`
-	Phase        SPPhase        `json:"phase"`
-	HostSeat     int            `json:"hostSeat"`
-	YourSeat     int            `json:"yourSeat"`
-	TimerMinutes int            `json:"timerMinutes"`
-	EndsAt       int64          `json:"endsAt"`    // playing 에만 >0
-	Locations    []string       `json:"locations"` // playing 부터 24곳
-	IsSpy        bool           `json:"isSpy"`
-	Location     string         `json:"location"`
-	Players      []SPPlayerView `json:"players"`
-	Votes        []SPVoteView   `json:"votes"`
-	Result       *SPResultView  `json:"result"`
+	GameID       string  `json:"gameId"`
+	Phase        SPPhase `json:"phase"`
+	HostSeat     int     `json:"hostSeat"`
+	YourSeat     int     `json:"yourSeat"`
+	TimerMinutes int     `json:"timerMinutes"`
+	// CategoryChoice 대기실 host 선택 (waiting 표시용), Category 는 확정 카테고리
+	CategoryChoice string         `json:"categoryChoice"`
+	Category       string         `json:"category"`
+	EndsAt         int64          `json:"endsAt"`    // playing 에만 >0
+	Locations      []string       `json:"locations"` // playing 부터 확정 카테고리 단어 24개
+	IsSpy          bool           `json:"isSpy"`
+	Location       string         `json:"location"`
+	Players        []SPPlayerView `json:"players"`
+	Votes          []SPVoteView   `json:"votes"`
+	Result         *SPResultView  `json:"result"`
 }
 
 // SPEventPayload 연출용 이벤트.
@@ -199,6 +249,7 @@ type SPEventPayload struct {
 type SPGameOverPayload struct {
 	Winner          string         `json:"winner"`
 	SpySeat         int            `json:"spySeat"`
+	Category        string         `json:"category"`
 	Location        string         `json:"location"`
 	Reason          string         `json:"reason"`
 	GuessedLocation string         `json:"guessedLocation"`
