@@ -230,7 +230,7 @@ func TestSPGuessJudgement(t *testing.T) {
 	}
 
 	// voting 중 추리는 에러
-	g.BeginVoting()
+	g.BeginVoting(time.Minute)
 	if err := g.Guess(1, "해변"); err == nil {
 		t.Fatal("voting 중 추리가 허용됐다")
 	}
@@ -241,7 +241,7 @@ func TestSPGuessJudgement(t *testing.T) {
 func TestSPVoteJudgement(t *testing.T) {
 	setup := func(spySeat int) *SPGame {
 		g := newSPStartedGame(4, spySeat, "카지노")
-		g.BeginVoting()
+		g.BeginVoting(time.Minute)
 		return g
 	}
 	mustVote := func(t *testing.T, g *SPGame, votes map[int]int) {
@@ -299,7 +299,7 @@ func TestSPVoteValidation(t *testing.T) {
 		t.Fatal("playing 중 투표가 허용됐다")
 	}
 
-	g.BeginVoting()
+	g.BeginVoting(time.Minute)
 	if err := g.SubmitVote(0, 0); err == nil {
 		t.Fatal("자기 지목이 허용됐다")
 	}

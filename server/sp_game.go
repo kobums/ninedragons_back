@@ -137,7 +137,7 @@ func (g *SPGame) Guess(seat int, location string) error {
 		return errors.New("추리는 게임 중에만 할 수 있습니다")
 	}
 	if seat != g.SpySeat {
-		return errors.New("스파이만 장소를 추리할 수 있습니다")
+		return errors.New("스파이만 정답을 추리할 수 있습니다")
 	}
 	if !g.spValidWord(location) {
 		return errors.New("단어 목록에 없는 단어입니다")
@@ -153,12 +153,14 @@ func (g *SPGame) Guess(seat int, location string) error {
 // ==================== 투표 ====================
 
 // BeginVoting 타이머 종료 — playing → voting (허브 타이머가 호출)
-func (g *SPGame) BeginVoting() {
+func (g *SPGame) BeginVoting(voteDur time.Duration) {
 	if g.Phase != SPPhasePlaying {
 		return
 	}
 	g.Phase = SPPhaseVoting
 	g.Votes = map[int]int{}
+	// 투표 마감 시각 — AFK 로 방이 영구 정지하지 않게 허브가 타임아웃을 건다
+	g.EndsAt = time.Now().Add(voteDur).UnixMilli()
 }
 
 // SubmitVote 공개 투표 제출 (기권 없음·자기 지목 불가, 집계 전 덮어쓰기 허용)

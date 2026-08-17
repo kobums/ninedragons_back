@@ -254,8 +254,9 @@ func TestSPHiddenState(t *testing.T) {
 	// ---- 타이머 종료 → voting ----
 	for i, c := range clients {
 		state := c.waitPhase(t, SPPhaseVoting)
-		if state["endsAt"].(float64) != 0 {
-			t.Fatalf("seat%d voting endsAt = %v, want 0", i, state["endsAt"])
+		// voting 에도 타임아웃 마감 시각이 실린다 (AFK 영구 정지 방지)
+		if state["endsAt"].(float64) <= 0 {
+			t.Fatalf("seat%d voting endsAt = %v, want >0", i, state["endsAt"])
 		}
 		if _, leaked := state["spySeat"]; leaked {
 			t.Fatalf("seat%d voting 스냅샷에 spySeat 필드가 있다", i)
@@ -456,4 +457,39 @@ func TestSPGraceExpiredBotTakeover(t *testing.T) {
 		}
 	}
 	t.Fatal("30초 안에 game_over 를 받지 못했다")
+}
+
+// TestSPVoteTimeout 투표 타임아웃 — 접속만 유지한 채 아무도 투표하지 않아도
+// 마감(spVoteTimeoutMinutes×spMinute) 후 제출된 표만으로 판정된다.
+// 무표는 단독 최다가 없으므로 미검거 = 스파이 승(vote_missed).
+func TestSPVoteTimeout(t *testing.T) {
+	_, url, cleanup := newSPTestServer(t, defaultDisconnectGrace)
+	defer cleanup()
+
+	clients := make([]*spTestClient, 3)
+	for i := range clients {
+		clients[i] = spDial(t, url)
+		defer clients[i].conn.Close()
+		spJoin(t, clients[i], fmt.Sprintf("잠수%d", i+1))
+	}
+	clients[0].send(t, SPMessage{Type: SPMsgStart, Payload: map[string]interface{}{}})
+
+	// 타이머 종료 → voting (endsAt 이 투표 마감 시각으로 실린다)
+	state := clients[0].waitPhase(t, SPPhaseVoting)
+	if state["endsAt"].(float64) <= 0 {
+		t.Fatalf("voting endsAt = %v, want >0", state["endsAt"])
+	}
+
+	// 아무도 투표하지 않는다 — 타임아웃 판정 대기
+	over := clients[0].waitFor(t, SPMsgGameOver)
+	payload := over.Payload.(map[string]interface{})
+	if payload["winner"].(string) != "spy" {
+		t.Fatalf("무투표 타임아웃 승자 = %v, want spy", payload["winner"])
+	}
+	if payload["reason"].(string) != "vote_missed" {
+		t.Fatalf("사유 = %v, want vote_missed", payload["reason"])
+	}
+	// 나머지 클라이언트도 종료를 받는다
+	clients[1].waitFor(t, SPMsgGameOver)
+	clients[2].waitFor(t, SPMsgGameOver)
 }

@@ -15,6 +15,10 @@ import (
 // spMinute 타이머 1분의 실제 길이 (테스트에서 짧게 낮춘다)
 var spMinute = time.Minute
 
+// spVoteTimeoutMinutes 투표 제한 시간(분) — 접속만 유지한 채 투표하지 않는
+// 좌석이 방을 영구 정지시키지 않게 만료 시 제출된 표만으로 판정한다
+const spVoteTimeoutMinutes = 1
+
 // spRoom 게임(순수 상태)과 좌석별 연결의 매핑
 type spRoom struct {
 	Game    *SPGame
@@ -269,7 +273,7 @@ func (h *SPHub) handleSetTimer(client *SPClient, msg SPMessage) {
 	h.broadcastState(room)
 }
 
-// handleSetCategory host 의 대기실 카테고리 선택 (랜덤/장소/직업/과일/음식/동물/스포츠)
+// handleSetCategory host 의 대기실 카테고리 선택 (랜덤 + spCategoryNames 9종)
 func (h *SPHub) handleSetCategory(client *SPClient, msg SPMessage) {
 	room := h.lobby
 	if room == nil || client.GameID != room.Game.ID {
@@ -418,7 +422,7 @@ func (h *SPHub) handleGuess(client *SPClient, msg SPMessage) {
 	log.Printf("[스파이폴][추리] game=%s | seat%d=%s → %q (정답 %q)",
 		room.Game.ID, seat, displayName(client.Name), payload.Location, room.Game.Location)
 	h.broadcastEvent(room, SPEventPayload{Kind: "guess", Seat: &seat,
-		Message: fmt.Sprintf("스파이가 장소를 추리했습니다 — %s", payload.Location)})
+		Message: fmt.Sprintf("스파이가 정답을 추리했습니다 — %s", payload.Location)})
 	h.finishGame(room)
 }
 
@@ -464,11 +468,30 @@ func (h *SPHub) handleTimerFired(sig spTimerSignal) {
 	if room == nil || room.Game.Phase != sig.Phase {
 		return
 	}
-	room.Game.BeginVoting()
+	if sig.Phase == SPPhaseVoting {
+		// 투표 타임아웃 — 제출된 표만으로 판정 (표가 없으면 미검거 = 스파이 승)
+		log.Printf("[스파이폴][투표마감] game=%s | 타임아웃 — %d표로 판정",
+			room.Game.ID, len(room.Game.Votes))
+		room.Game.ResolveVotes()
+		h.finishGame(room)
+		return
+	}
+
+	room.Game.BeginVoting(spVoteTimeoutMinutes * spMinute)
 	log.Printf("[스파이폴][투표시작] game=%s | 타이머 종료", room.Game.ID)
 	h.broadcastEvent(room, SPEventPayload{Kind: "vote_begin",
 		Message: "시간 종료 — 스파이로 의심되는 사람을 지목하세요"})
 	h.broadcastState(room)
+	h.scheduleVoteTimer(room)
+}
+
+// scheduleVoteTimer 투표 타임아웃 타이머 (playing 타이머와 같은 채널 경유)
+func (h *SPHub) scheduleVoteTimer(room *spRoom) {
+	sig := spTimerSignal{GameID: room.Game.ID, Phase: SPPhaseVoting}
+	dur := time.Until(time.UnixMilli(room.Game.EndsAt))
+	room.Timer = time.AfterFunc(dur, func() {
+		h.timerFired <- sig
+	})
 }
 
 // ==================== 상태 뷰 (은닉의 핵심) ====================
@@ -509,7 +532,7 @@ func (h *SPHub) buildSPState(room *spRoom, viewerSeat int) SPGameStatePayload {
 	}
 
 	endsAt := int64(0)
-	if game.Phase == SPPhasePlaying {
+	if game.Phase == SPPhasePlaying || game.Phase == SPPhaseVoting {
 		endsAt = game.EndsAt
 	}
 
