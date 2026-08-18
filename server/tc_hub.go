@@ -21,7 +21,24 @@ type tcRoom struct {
 
 	// HandEndTimer hand_end 자동 진행 타이머 (허브 채널 경유로만 상태를 만진다)
 	HandEndTimer *time.Timer
+
+	// AfkTimer 접속 유지 AFK 구제 타이머 — 상태가 바뀔 때마다 리셋되고,
+	// 발화하면 진행을 막는 좌석의 수를 봇 두뇌로 1회 자동 실행한다.
+	AfkTimer *time.Timer
+	// AfkSeq 상태 변경 일련번호 (뒤늦은 발화 무시용)
+	AfkSeq int
 }
+
+// tcAfkSignal AFK 타이머 발화 표식
+type tcAfkSignal struct {
+	GameID string
+	Seq    int
+}
+
+// tcAfkTimeout 접속 유지 AFK 의 자동 진행 대기 시간.
+// 그랜드·교환·플레이 턴·용 전달 모두에 적용 — 한 명이 4인 게임을
+// 영구히 볼모로 잡지 않게 한다 (끊긴 좌석의 90초 유예 봇 대체와 별개).
+var tcAfkTimeout = 90 * time.Second
 
 // tcHandEndSignal 어느 게임의 몇 번째 핸드 종료 타이머인지 (뒤늦은 발화 무시용)
 type tcHandEndSignal struct {
@@ -50,6 +67,7 @@ type TCHub struct {
 
 	// hand_end 자동 진행 알림
 	handEndFired chan tcHandEndSignal
+	afkFired     chan tcAfkSignal
 
 	// 세션·유예 타이머 장부 (sessions/grace/graceExpired 필드 승격)
 	sessionManager[*TCClient]
@@ -71,6 +89,7 @@ func NewTCHub() *TCHub {
 		rooms:          make(map[string]*tcRoom),
 		gameMessage:    make(chan TCGameMessage),
 		handEndFired:   make(chan tcHandEndSignal, 8),
+		afkFired:       make(chan tcAfkSignal, 8),
 		sessionManager: newSessionManager[*TCClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -99,6 +118,9 @@ func (h *TCHub) Run() {
 
 		case sig := <-h.handEndFired:
 			h.handleHandEndFired(sig)
+
+		case sig := <-h.afkFired:
+			h.handleAfkFired(sig)
 
 		case message := <-h.gameMessage:
 			h.handleGameMessage(message)
@@ -375,7 +397,7 @@ func (h *TCHub) handlePlay(client *TCClient, msg TCMessage) {
 
 	seat := client.Seat
 	kind := "play"
-	message := fmt.Sprintf("%s: %s", client.Name, res.Combo.Kind)
+	message := fmt.Sprintf("%s: %s", client.Name, tcComboLabel(res.Combo.Kind))
 	if tcIsBombKind(res.Combo.Kind) {
 		kind = "bomb"
 		message = fmt.Sprintf("%s 폭탄!", client.Name)
@@ -575,6 +597,79 @@ func (h *TCHub) broadcastState(room *tcRoom) {
 			Type:    TCMsgGameState,
 			Payload: h.buildTCState(room, seat),
 		})
+	}
+	h.resetAfkTimer(room)
+}
+
+// resetAfkTimer 상태가 바뀔 때마다 AFK 타이머를 다시 건다.
+// 응답을 기다리는 단계(그랜드·교환·플레이)에서만 동작한다.
+func (h *TCHub) resetAfkTimer(room *tcRoom) {
+	room.AfkSeq++
+	if room.AfkTimer != nil {
+		room.AfkTimer.Stop()
+		room.AfkTimer = nil
+	}
+	switch room.Game.Phase {
+	case TCPhaseGrand, TCPhaseExchange, TCPhasePlay:
+	default:
+		return
+	}
+	sig := tcAfkSignal{GameID: room.Game.ID, Seq: room.AfkSeq}
+	room.AfkTimer = time.AfterFunc(tcAfkTimeout, func() {
+		h.afkFired <- sig
+	})
+}
+
+// handleAfkFired AFK 타이머 발화 — 진행을 막는 사람 좌석의 수를
+// 봇 두뇌(서버 검증과 같은 열거)로 1회 자동 실행한다. 좌석은 유지된다.
+func (h *TCHub) handleAfkFired(sig tcAfkSignal) {
+	room := h.rooms[sig.GameID]
+	if room == nil || room.AfkSeq != sig.Seq {
+		return
+	}
+	game := room.Game
+
+	// 이 단계의 진행을 막고 있는 좌석들
+	blocking := []int{}
+	switch game.Phase {
+	case TCPhaseGrand:
+		for seat := 0; seat < TCSeats; seat++ {
+			if !game.GrandAnswered[seat] {
+				blocking = append(blocking, seat)
+			}
+		}
+	case TCPhaseExchange:
+		for seat := 0; seat < TCSeats; seat++ {
+			if game.ExchangeSub[seat] == nil {
+				blocking = append(blocking, seat)
+			}
+		}
+	case TCPhasePlay:
+		if game.DragonPendingSeat >= 0 {
+			blocking = append(blocking, game.DragonPendingSeat)
+		} else {
+			blocking = append(blocking, game.CurrentTurn)
+		}
+	default:
+		return
+	}
+
+	brain := newTCBrain()
+	for _, seat := range blocking {
+		client := room.Clients[seat]
+		if client == nil || client.Bot {
+			continue // 봇 좌석은 스스로 행동한다
+		}
+		state := h.buildTCState(room, seat)
+		act := brain.decide(TCMessage{Type: TCMsgGameState, Payload: state})
+		if act == nil {
+			continue
+		}
+		log.Printf("[티츄][자동진행] game=%s | seat%d=%s 무응답 — %s 자동 실행",
+			game.ID, seat, displayName(game.Names[seat]), act.Type)
+		h.broadcastEvent(room, TCEventPayload{Kind: "afk", Seat: &seat,
+			Message: fmt.Sprintf("%s님이 오래 응답하지 않아 자동으로 진행합니다", game.Names[seat])})
+		h.handleGameMessage(TCGameMessage{Client: client, Message: *act})
 	}
 }
 

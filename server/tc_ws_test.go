@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,7 @@ import (
 // 테스트에서는 핸드 사이 대기를 짧게 (전원 ready 경로가 주지만 안전망)
 func init() {
 	tcHandEndDelay = 100 * time.Millisecond
+	tcAfkTimeout = 120 * time.Millisecond
 }
 
 // tcTestClient 공용 testConn 에 티츄 메시지 타입의 waitFor 를 얹은 래퍼
@@ -251,4 +254,58 @@ func TestTCBotTakeover(t *testing.T) {
 	defer late.conn.Close()
 	late.send(t, TCMessage{Type: TCMsgRejoin, Payload: TCRejoinPayload{SessionID: sessions[3]}})
 	late.waitFor(t, TCMsgSessionExpired)
+}
+
+// TestTCAfkAutoAdvance 접속만 유지한 채 아무것도 하지 않는 사람 좌석이 있어도
+// AFK 타이머가 봇 두뇌로 자동 진행한다 — 그랜드·교환·플레이 전 단계.
+// 사람 4명 전원 무행동으로 두고 게임이 스스로 핸드 정산(hand_end 경유
+// 다음 핸드 시작 또는 game_over)까지 굴러가는지 본다.
+func TestTCAfkAutoAdvance(t *testing.T) {
+	_, url, cleanup := newTCTestServer(t, defaultDisconnectGrace)
+	defer cleanup()
+
+	clients := make([]*tcTestClient, TCSeats)
+	for i := range clients {
+		clients[i] = tcDial(t, url)
+		defer clients[i].conn.Close()
+		tcJoin(t, clients[i], fmt.Sprintf("잠수%d", i+1))
+	}
+
+	// 전원 무행동 — AFK 자동 진행만으로 첫 핸드가 끝나 2번째 핸드의
+	// 그랜드 단계(또는 그 이전에 목표 도달 시 game_over)에 닿아야 한다
+	// 2번째 핸드 스냅샷 또는 game_over 가 올 때까지 직접 소비
+	// (waitMatch 는 3초 한도라 AFK 자동 진행 완주에는 짧다)
+	deadline := time.Now().Add(60 * time.Second)
+	done := false
+	for !done && time.Now().Before(deadline) {
+		clients[0].conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := clients[0].conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if line == "" {
+				continue
+			}
+			var msg TCMessage
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			if msg.Type == TCMsgGameOver {
+				done = true // 목표 도달로 끝나도 자동 진행은 증명된다
+				break
+			}
+			if msg.Type != TCMsgGameState {
+				continue
+			}
+			state := asPayloadMap(t, msg.Payload)
+			if v, ok := state["handNo"].(float64); ok && v >= 2 {
+				done = true
+				break
+			}
+		}
+	}
+	if !done {
+		t.Fatal("AFK 자동 진행이 첫 핸드를 끝내지 못했다 (60초)")
+	}
 }

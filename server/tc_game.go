@@ -120,7 +120,8 @@ func tcSortKey(card string) int {
 
 // tcSortHand 손패 정렬 (복사본 반환)
 func tcSortHand(hand []string) []string {
-	out := append([]string(nil), hand...)
+	// 손을 다 턴 좌석도 JSON 에서 null 이 아니라 [] 로 나가야 한다
+	out := append([]string{}, hand...)
 	sort.Slice(out, func(i, j int) bool { return tcSortKey(out[i]) < tcSortKey(out[j]) })
 	return out
 }
@@ -148,6 +149,31 @@ func tcRankLabel(rank int) string {
 		return "A"
 	}
 	return fmt.Sprintf("%d", rank)
+}
+
+// tcComboLabel 콤보 종류의 한글 표기 — 이벤트·토스트 문구용
+func tcComboLabel(kind string) string {
+	switch kind {
+	case tcSingle:
+		return "싱글"
+	case tcPair:
+		return "페어"
+	case tcTriple:
+		return "트리플"
+	case tcStraight:
+		return "스트레이트"
+	case tcFullhouse:
+		return "풀하우스"
+	case tcPairSeq:
+		return "연속 페어"
+	case tcBomb:
+		return "폭탄"
+	case tcBombSF:
+		return "무늬 폭탄"
+	case tcDogCombo:
+		return "개"
+	}
+	return kind
 }
 
 // tcContainsRank 자연 카드(봉황 제외)로 해당 랭크를 포함하는지 — 소원 이행 판정
@@ -1135,7 +1161,7 @@ func (g *TCGame) Pass(seat int) (*tcPassResult, error) {
 	}
 	if g.WishRank >= 2 {
 		if _, forced := tcEnumerate(g.Hands[seat], g.lastCombo, g.WishRank); forced {
-			return nil, fmt.Errorf("소원(%d)을 이행할 수 있어 패스할 수 없습니다", g.WishRank)
+			return nil, fmt.Errorf("소원(%s)을 이행할 수 있어 패스할 수 없습니다", tcRankLabel(g.WishRank))
 		}
 	}
 
