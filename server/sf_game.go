@@ -132,20 +132,20 @@ func (g *SFGame) mafiaAlive() int {
 	return n
 }
 
-// PendingNightRoles 아직 밤 행동 제출이 남은 역할 목록 (생존자 기준)
-func (g *SFGame) PendingNightRoles() []string {
-	pending := []string{}
-	for _, role := range []SFRole{SFRoleMafia, SFRolePolice, SFRoleDoctor} {
-		for _, p := range g.Players {
-			if p.Alive && p.Role == role {
-				if _, ok := g.NightActions[p.Seat]; !ok {
-					pending = append(pending, string(role))
-					break
-				}
-			}
+// PendingNightCount 아직 밤 행동 제출이 남은 생존 역할자 수.
+// 역할 목록 대신 인원수만 — 목록을 노출하면 밤 사망자의 비공개 역할이
+// 추론된다 (예: 경찰 사망 다음 밤부터 목록에서 police 가 사라짐).
+func (g *SFGame) PendingNightCount() int {
+	n := 0
+	for _, p := range g.Players {
+		if !p.Alive || p.Role == SFRoleCitizen {
+			continue
+		}
+		if _, ok := g.NightActions[p.Seat]; !ok {
+			n++
 		}
 	}
-	return pending
+	return n
 }
 
 // ==================== 밤 ====================
@@ -239,6 +239,10 @@ func (g *SFGame) ResolveNight(rng *rand.Rand) int {
 	}
 
 	g.Players[kill].Alive = false
+	// 조사한 경찰이 같은 밤에 살해되면 결과를 전달하지 않는다 (사망자는 관전만)
+	if g.Players[kill].Role == SFRolePolice {
+		g.Investigation = nil
+	}
 	g.Announcement = &SFAnnouncementView{Kind: "killed", Seat: kill}
 	g.checkWin()
 	return kill
@@ -293,6 +297,9 @@ func (g *SFGame) SubmitVote(voter, target int) error {
 		}
 		if !g.Players[target].Alive {
 			return errors.New("생존자만 지목할 수 있습니다")
+		}
+		if target == voter {
+			return errors.New("자기 자신에게는 투표할 수 없습니다")
 		}
 	}
 	g.Votes[voter] = target

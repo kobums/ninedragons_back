@@ -114,6 +114,9 @@ type SFGame struct {
 	// Execution 처형 결과 — execution 단계에서 설정, 다음 밤에 비운다
 	Execution *SFExecutionView
 
+	// Deadline 밤 행동·낮 투표 마감 시각 (unixMillis) — 허브가 세팅·소비한다
+	Deadline int64
+
 	Winner string // ""|"mafia"|"citizen"
 
 	Ready     bool
@@ -157,8 +160,11 @@ type SFPlayerView struct {
 
 // SFNightView 밤 단계 진행 정보 (night 단계에만 실린다)
 type SFNightView struct {
-	YourActionDone bool     `json:"yourActionDone"`
-	PendingRoles   []string `json:"pendingRoles"`
+	YourActionDone bool `json:"yourActionDone"`
+	// PendingCount 아직 제출하지 않은 생존 역할자 수 — 역할 목록을 노출하면
+	// 밤 사망자의 비공개 역할이 추론되므로 (경찰 사망 → 목록에서 사라짐)
+	// 인원수만 공개한다
+	PendingCount int `json:"pendingCount"`
 }
 
 // SFInvestigationView 경찰 조사 결과 — 경찰 본인에게만 실린다
@@ -188,9 +194,12 @@ type SFExecutionView struct {
 // SFGameStatePayload 개인화 게임 스냅샷 (은닉형).
 // 비마피아 스냅샷에는 mafiaSeats 필드 자체가 없어야 한다 (omitempty).
 type SFGameStatePayload struct {
-	GameID        string               `json:"gameId"`
-	Phase         SFPhase              `json:"phase"`
-	DayNo         int                  `json:"dayNo"`
+	GameID string  `json:"gameId"`
+	Phase  SFPhase `json:"phase"`
+	DayNo  int     `json:"dayNo"`
+	// EndsAt 밤 행동·낮 투표의 마감 시각 (unixMillis, 그 외 단계 0) —
+	// 접속 유지 AFK 가 게임을 영구 정지시키지 않게 허브가 타임아웃을 건다
+	EndsAt        int64                `json:"endsAt"`
 	HostSeat      int                  `json:"hostSeat"`
 	YourSeat      int                  `json:"yourSeat"`
 	YourRole      string               `json:"yourRole"`

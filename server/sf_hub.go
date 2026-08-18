@@ -16,6 +16,14 @@ import (
 // 시간 (테스트에서 짧게 낮춘다)
 var sfPhaseDelay = 5 * time.Second
 
+// 밤 행동·낮 투표의 제한 시간 — 접속만 유지한 채 제출하지 않는 좌석이
+// 게임을 영구 정지시키지 않게, 만료 시 제출된 것만으로 해소한다
+// (밤: 미제출 마피아 표 없이 다수결·무표면 조용한 밤 / 투표: 미제출 = 기권)
+var (
+	sfNightTimeout = 2 * time.Minute
+	sfVoteTimeout  = 3 * time.Minute
+)
+
 // sfRoom 게임(순수 상태)과 좌석별 연결의 매핑
 type sfRoom struct {
 	Game       *SFGame
@@ -289,6 +297,8 @@ func (h *SFHub) startGame(room *sfRoom) {
 	h.broadcastEvent(room, SFEventPayload{Kind: "started"})
 	h.broadcastEvent(room, SFEventPayload{Kind: "night_begin",
 		Message: fmt.Sprintf("%d일차 밤이 시작되었습니다", room.Game.DayNo)})
+	// 마감 시각을 먼저 세팅해야 첫 스냅샷에 endsAt 이 실린다
+	h.scheduleDeadline(room, sfNightTimeout)
 	h.broadcastState(room)
 }
 
@@ -373,6 +383,10 @@ func (h *SFHub) handleNightAction(client *SFClient, msg SFMessage) {
 // resolveNight 밤 해소 — 결과 발표 후 5초 뒤 투표로 자동 진행
 func (h *SFHub) resolveNight(room *sfRoom) {
 	game := room.Game
+	if room.PhaseTimer != nil {
+		room.PhaseTimer.Stop()
+	}
+	game.Deadline = 0
 	killed := game.ResolveNight(h.rng)
 
 	if killed >= 0 {
@@ -420,6 +434,10 @@ func (h *SFHub) handleVote(client *SFClient, msg SFMessage) {
 // resolveVotes 투표 집계 — 처형(역할 공개) 또는 무처형 발표 후 5초 뒤 밤으로
 func (h *SFHub) resolveVotes(room *sfRoom) {
 	game := room.Game
+	if room.PhaseTimer != nil {
+		room.PhaseTimer.Stop()
+	}
+	game.Deadline = 0
 	game.ResolveVotes()
 
 	if game.Execution != nil && game.Execution.Seat >= 0 {
@@ -454,6 +472,15 @@ func (h *SFHub) schedulePhase(room *sfRoom, phase SFPhase) {
 	})
 }
 
+// scheduleDeadline 밤 행동·낮 투표의 타임아웃 타이머 (같은 채널 경유)
+func (h *SFHub) scheduleDeadline(room *sfRoom, dur time.Duration) {
+	room.Game.Deadline = time.Now().Add(dur).UnixMilli()
+	sig := sfPhaseSignal{GameID: room.Game.ID, Phase: room.Game.Phase, DayNo: room.Game.DayNo}
+	room.PhaseTimer = time.AfterFunc(dur, func() {
+		h.phaseFired <- sig
+	})
+}
+
 func (h *SFHub) handlePhaseFired(sig sfPhaseSignal) {
 	room := h.rooms[sig.GameID]
 	if room == nil || room.Game.Phase != sig.Phase || room.Game.DayNo != sig.DayNo {
@@ -461,15 +488,27 @@ func (h *SFHub) handlePhaseFired(sig sfPhaseSignal) {
 	}
 	game := room.Game
 	switch sig.Phase {
+	case SFPhaseNight:
+		// 밤 타임아웃 — 제출된 행동만으로 해소 (미제출 마피아 표는 빠진다)
+		log.Printf("[마피아][밤마감] game=%s | %d일차 | 타임아웃 — 미제출 %d명",
+			game.ID, game.DayNo, game.PendingNightCount())
+		h.resolveNight(room)
+	case SFPhaseDayVote:
+		// 투표 타임아웃 — 미제출자는 기권으로 판정
+		log.Printf("[마피아][투표마감] game=%s | %d일차 | 타임아웃 — %d표로 판정",
+			game.ID, game.DayNo, len(game.Votes))
+		h.resolveVotes(room)
 	case SFPhaseDayResult:
 		game.BeginVote()
 		h.broadcastEvent(room, SFEventPayload{Kind: "vote_begin",
 			Message: fmt.Sprintf("%d일차 투표를 시작합니다", game.DayNo)})
+		h.scheduleDeadline(room, sfVoteTimeout)
 		h.broadcastState(room)
 	case SFPhaseExecution:
 		game.BeginNight()
 		h.broadcastEvent(room, SFEventPayload{Kind: "night_begin",
 			Message: fmt.Sprintf("%d일차 밤이 시작되었습니다", game.DayNo)})
+		h.scheduleDeadline(room, sfNightTimeout)
 		h.broadcastState(room)
 	}
 }
@@ -518,11 +557,12 @@ func (h *SFHub) buildSFState(room *sfRoom, viewerSeat int) SFGameStatePayload {
 	var night *SFNightView
 	if game.Phase == SFPhaseNight {
 		_, done := game.NightActions[viewerSeat]
-		night = &SFNightView{YourActionDone: done, PendingRoles: game.PendingNightRoles()}
+		night = &SFNightView{YourActionDone: done, PendingCount: game.PendingNightCount()}
 	}
 
 	var investigation *SFInvestigationView
-	if yourRole == string(SFRolePolice) {
+	if yourRole == string(SFRolePolice) &&
+		viewerSeat >= 0 && viewerSeat < len(game.Players) && game.Players[viewerSeat].Alive {
 		investigation = game.Investigation
 	}
 
@@ -531,10 +571,16 @@ func (h *SFHub) buildSFState(room *sfRoom, viewerSeat int) SFGameStatePayload {
 		votes = game.VoteViews()
 	}
 
+	endsAt := int64(0)
+	if game.Phase == SFPhaseNight || game.Phase == SFPhaseDayVote {
+		endsAt = game.Deadline
+	}
+
 	return SFGameStatePayload{
 		GameID:        game.ID,
 		Phase:         game.Phase,
 		DayNo:         game.DayNo,
+		EndsAt:        endsAt,
 		HostSeat:      h.hostSeat(room),
 		YourSeat:      viewerSeat,
 		YourRole:      yourRole,

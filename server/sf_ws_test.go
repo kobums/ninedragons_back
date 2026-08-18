@@ -13,6 +13,10 @@ import (
 func init() {
 	// day_result/execution 자동 진행을 짧게 — 완주 테스트가 60초 안에 끝나는 근거
 	sfPhaseDelay = 40 * time.Millisecond
+	// 밤·투표 타임아웃도 짧게 — 봇 완주 테스트는 이보다 훨씬 빨리 제출하므로
+	// 정상 경로에는 영향이 없고, 타임아웃 전용 테스트가 이 값에 기대어 돈다
+	sfNightTimeout = 600 * time.Millisecond
+	sfVoteTimeout = 600 * time.Millisecond
 }
 
 // sfTestClient 공용 testConn 에 게임 메시지 타입의 waitFor 를 얹은 래퍼
@@ -453,4 +457,70 @@ func TestSFGraceExpiredBotTakeover(t *testing.T) {
 		}
 	}
 	t.Fatal("30초 안에 game_over 를 받지 못했다")
+}
+
+// TestSFAfkTimeouts 접속만 유지한 채 아무것도 제출하지 않아도 밤·투표가
+// 타임아웃으로 해소된다 — AFK 영구 정지 방지의 회귀 장치.
+// 6인 전원이 사람 드라이버(무행동)라 밤은 무표 해소(조용한 밤), 투표는
+// 0표 판정(무처형)으로 흘러 2일차 밤까지 스스로 진행되는지 본다.
+func TestSFAfkTimeouts(t *testing.T) {
+	_, url, cleanup := newSFTestServer(t, defaultDisconnectGrace)
+	defer cleanup()
+
+	clients := make([]*sfTestClient, SFMinPlayers)
+	for i := range clients {
+		clients[i] = sfDial(t, url)
+		defer clients[i].conn.Close()
+		sfJoin(t, clients[i], fmt.Sprintf("잠수%d", i+1))
+	}
+	clients[0].send(t, SFMessage{Type: SFMsgStart, Payload: map[string]interface{}{}})
+
+	// 1일차 밤 — endsAt(마감)이 실려 있어야 한다
+	night := clients[0].waitPhase(t, SFPhaseNight)
+	if night["endsAt"].(float64) <= 0 {
+		t.Fatalf("night endsAt = %v, want >0", night["endsAt"])
+	}
+
+	// 아무도 행동하지 않는다 → 밤 타임아웃 → 무표 해소(아무도 죽지 않음)
+	clients[0].waitPhase(t, SFPhaseDayResult)
+
+	// 투표 단계도 endsAt — 아무도 투표하지 않는다 → 무처형
+	vote := clients[0].waitPhase(t, SFPhaseDayVote)
+	if vote["endsAt"].(float64) <= 0 {
+		t.Fatalf("day_vote endsAt = %v, want >0", vote["endsAt"])
+	}
+	clients[0].waitPhase(t, SFPhaseExecution)
+
+	// 2일차 밤 진입 = 한 사이클이 사람 입력 없이 완주됐다
+	night2 := clients[0].waitPhase(t, SFPhaseNight)
+	if night2["dayNo"].(float64) != 2 {
+		t.Fatalf("dayNo = %v, want 2", night2["dayNo"])
+	}
+}
+
+// TestSFPendingCountHidesRoles 밤 대기 표시가 역할 목록이 아니라 인원수만
+// 노출한다 — 밤 사망자의 비공개 역할 추론(경찰 사망 → 목록에서 사라짐) 차단.
+func TestSFPendingCountHidesRoles(t *testing.T) {
+	_, url, cleanup := newSFTestServer(t, defaultDisconnectGrace)
+	defer cleanup()
+
+	clients := make([]*sfTestClient, SFMinPlayers)
+	for i := range clients {
+		clients[i] = sfDial(t, url)
+		defer clients[i].conn.Close()
+		sfJoin(t, clients[i], fmt.Sprintf("사람%d", i+1))
+	}
+	clients[0].send(t, SFMessage{Type: SFMsgStart, Payload: map[string]interface{}{}})
+
+	state := clients[0].waitPhase(t, SFPhaseNight)
+	nightView, ok := state["night"].(map[string]interface{})
+	if !ok {
+		t.Fatal("night 뷰가 없다")
+	}
+	if _, leaked := nightView["pendingRoles"]; leaked {
+		t.Fatal("night 뷰에 pendingRoles(역할 목록)가 있다 — 은닉 위반")
+	}
+	if nightView["pendingCount"].(float64) <= 0 {
+		t.Fatalf("pendingCount = %v, want >0", nightView["pendingCount"])
+	}
 }
