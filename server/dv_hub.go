@@ -17,6 +17,9 @@ import (
 type dvRoom struct {
 	Game    *DVGame
 	Clients map[int]*DVClient // seat → client
+
+	// Code 사설 방 초대 코드 (공용 로비는 "")
+	Code string
 }
 
 type DVHub struct {
@@ -26,8 +29,12 @@ type DVHub struct {
 	// 진행/대기 중인 방 (gameID → room)
 	rooms map[string]*dvRoom
 
-	// 글로벌 로비. 시작 전 방은 하나뿐이다.
+	// 글로벌 로비. 시작 전 공용 방은 하나뿐이다.
 	lobby *dvRoom
+
+	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
+	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	privateLobbies map[string]*dvRoom
 
 	// 클라이언트 등록
 	register chan *DVClient
@@ -56,6 +63,7 @@ func NewDVHub() *DVHub {
 		unregister:     make(chan *DVClient),
 		clients:        make(map[*DVClient]bool),
 		rooms:          make(map[string]*dvRoom),
+		privateLobbies: make(map[string]*dvRoom),
 		gameMessage:    make(chan DVGameMessage),
 		sessionManager: newSessionManager[*DVClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -127,14 +135,7 @@ func (h *DVHub) handleJoinLobby(client *DVClient, msg DVMessage) {
 	var payload DVJoinLobbyPayload
 	json.Unmarshal(payloadBytes, &payload)
 
-	if h.lobby == nil {
-		game := NewDVGame(uuid.New().String())
-		h.lobby = &dvRoom{Game: game, Clients: map[int]*DVClient{}}
-		h.rooms[game.ID] = h.lobby
-		log.Printf("[DV] Created lobby game %s", game.ID)
-	}
-
-	room := h.lobby
+	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.PlayerName)
 	if err != nil {
 		h.sendError(client, err.Error())
@@ -150,8 +151,10 @@ func (h *DVHub) handleJoinLobby(client *DVClient, msg DVMessage) {
 
 	log.Printf("[다빈치][입장] game=%s | seat%d=%s 로비 입장 (%d/%d)",
 		room.Game.ID, seat, displayName(client.Name), len(room.Game.Players), DVMaxPlayers)
-	notify("다빈치코드 참가", fmt.Sprintf("%s 입장 (%d/%d)",
-		displayName(client.Name), len(room.Game.Players), DVMaxPlayers))
+	if room.Code == "" { // 사설 방 입장은 조용히 (공용 로비만 알림)
+		notify("다빈치코드 참가", fmt.Sprintf("%s 입장 (%d/%d)",
+			displayName(client.Name), len(room.Game.Players), DVMaxPlayers))
+	}
 
 	h.broadcastLobby(room)
 
@@ -162,12 +165,49 @@ func (h *DVHub) handleJoinLobby(client *DVClient, msg DVMessage) {
 }
 
 func (h *DVHub) handleLeaveLobby(client *DVClient) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		return
 	}
 	h.removeFromLobby(room, client)
 	h.sendToClient(client, DVMessage{Type: DVMsgSessionExpired})
+}
+
+// lobbyRoomFor join payload 의 room 값으로 입장할 시작 전 방을 찾거나 만든다.
+// 생략/빈 문자열은 기존 공용 로비 경로 그대로, "NEW"는 새 코드 발급,
+// 그 외 코드는 해당 사설 방 (없으면 그 코드로 관대하게 새로 생성).
+func (h *DVHub) lobbyRoomFor(roomField string) *dvRoom {
+	code := normalizeRoomCode(roomField)
+	if code == "" {
+		if h.lobby == nil {
+			game := NewDVGame(uuid.New().String())
+			h.lobby = &dvRoom{Game: game, Clients: map[int]*DVClient{}}
+			h.rooms[game.ID] = h.lobby
+			log.Printf("[DV] Created lobby game %s", game.ID)
+		}
+		return h.lobby
+	}
+	if code == roomCodeNew {
+		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+	}
+	room := h.privateLobbies[code]
+	if room == nil {
+		game := NewDVGame(uuid.New().String())
+		room = &dvRoom{Game: game, Clients: map[int]*DVClient{}, Code: code}
+		h.privateLobbies[code] = room
+		h.rooms[game.ID] = room
+		log.Printf("[DV] Created private room %s (code=%s)", game.ID, code)
+	}
+	return room
+}
+
+// waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
+func (h *DVHub) waitingRoomOf(client *DVClient) *dvRoom {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Ready {
+		return nil
+	}
+	return room
 }
 
 // removeFromLobby 로비에서 좌석을 비우고 남은 좌석을 앞으로 당긴다
@@ -197,7 +237,11 @@ func (h *DVHub) removeFromLobby(room *dvRoom, client *DVClient) {
 
 	if len(room.Game.Players) == 0 {
 		delete(h.rooms, room.Game.ID)
-		h.lobby = nil
+		if room.Code != "" {
+			delete(h.privateLobbies, room.Code)
+		} else {
+			h.lobby = nil
+		}
 		return
 	}
 	h.broadcastLobby(room)
@@ -238,6 +282,7 @@ func (h *DVHub) broadcastLobby(room *dvRoom) {
 			Type: DVMsgLobbyState,
 			Payload: DVLobbyStatePayload{
 				GameID:    room.Game.ID,
+				RoomCode:  room.Code,
 				YourSeat:  seat,
 				SessionID: c.SessionID,
 				HostSeat:  host,
@@ -249,8 +294,8 @@ func (h *DVHub) broadcastLobby(room *dvRoom) {
 }
 
 func (h *DVHub) handleStartGame(client *DVClient) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		h.sendError(client, "로비를 찾을 수 없습니다")
 		return
 	}
@@ -269,7 +314,11 @@ func (h *DVHub) startGame(room *dvRoom) {
 	if err := room.Game.Start(h.rng); err != nil {
 		return
 	}
-	h.lobby = nil // 시작한 방은 로비에서 떼어낸다
+	if room.Code != "" {
+		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+	} else {
+		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
+	}
 
 	names := []string{}
 	for _, p := range room.Game.Players {
@@ -550,6 +599,7 @@ func (h *DVHub) buildDVState(room *dvRoom, viewerSeat int) DVGameStatePayload {
 
 	return DVGameStatePayload{
 		GameID:            game.ID,
+		RoomCode:          room.Code,
 		YourSeat:          viewerSeat,
 		Phase:             maskDVPhase(game, viewerSeat),
 		CurrentSeat:       game.CurrentSeat,

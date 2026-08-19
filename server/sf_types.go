@@ -127,6 +127,9 @@ type SFGame struct {
 
 type SFJoinGamePayload struct {
 	Name string `json:"name"`
+	// Room 선택 필드 — ""(생략)=공용 로비, "NEW"=새 사설 방 생성(코드 발급),
+	// 4자 코드=해당 사설 방 입장 (없으면 그 코드로 새로 생성)
+	Room string `json:"room,omitempty"`
 }
 
 type SFRejoinPayload struct {
@@ -194,9 +197,11 @@ type SFExecutionView struct {
 // SFGameStatePayload 개인화 게임 스냅샷 (은닉형).
 // 비마피아 스냅샷에는 mafiaSeats 필드 자체가 없어야 한다 (omitempty).
 type SFGameStatePayload struct {
-	GameID string  `json:"gameId"`
-	Phase  SFPhase `json:"phase"`
-	DayNo  int     `json:"dayNo"`
+	GameID string `json:"gameId"`
+	// RoomCode 사설 방 초대 코드 (공용 로비는 "") — 대기실 코드 표시·재접속 복원용
+	RoomCode string  `json:"roomCode"`
+	Phase    SFPhase `json:"phase"`
+	DayNo    int     `json:"dayNo"`
 	// EndsAt 밤 행동·낮 투표의 마감 시각 (unixMillis, 그 외 단계 0) —
 	// 접속 유지 AFK 가 게임을 영구 정지시키지 않게 허브가 타임아웃을 건다
 	EndsAt        int64                `json:"endsAt"`

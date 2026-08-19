@@ -246,9 +246,11 @@ func TestSFHiddenState(t *testing.T) {
 	// ---- 밤 해소: 마피아 → 최저 비마피아, 경찰 → 자기 아닌 최저, 의사 → 자기 ----
 	policeSeat := sfIndexOfRole(roles, "police")
 	doctorSeat := sfIndexOfRole(roles, "doctor")
+	// 경찰이 그 밤에 살해되면 조사 결과가 전달되지 않는 규칙이 있으므로
+	// (사망자는 관전만) 마피아 표적은 경찰이 아닌 비마피아로 고정한다
 	mafiaTarget := -1
 	for s := 0; s < n; s++ {
-		if roles[s] != "mafia" {
+		if roles[s] != "mafia" && s != policeSeat {
 			mafiaTarget = s
 			break
 		}

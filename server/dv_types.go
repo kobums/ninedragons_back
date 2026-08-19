@@ -121,6 +121,9 @@ type DVMessage struct {
 
 type DVJoinLobbyPayload struct {
 	PlayerName string `json:"playerName"`
+	// Room 선택 필드 — ""(생략)=공용 로비, "NEW"=새 사설 방 생성(코드 발급),
+	// 4자 코드=해당 사설 방 입장 (없으면 그 코드로 새로 생성)
+	Room string `json:"room,omitempty"`
 }
 
 type DVRejoinGamePayload struct {
@@ -172,7 +175,10 @@ type DVLobbyPlayer struct {
 
 // DVLobbyStatePayload 로비 상태. 입장/퇴장/호스트 변경 시마다 전원에게 재전송.
 type DVLobbyStatePayload struct {
-	GameID    string          `json:"gameId"`
+	GameID string `json:"gameId"`
+	// RoomCode 사설 방 초대 코드 (공용 로비는 "") — 대기실 코드 표시용
+	// (다빈치는 player_joined 대신 lobby_state 가 그 역할을 한다)
+	RoomCode  string          `json:"roomCode"`
 	YourSeat  int             `json:"yourSeat"`
 	SessionID string          `json:"sessionId"`
 	HostSeat  int             `json:"hostSeat"`
@@ -204,7 +210,9 @@ type DVPlayerView struct {
 // DVGameStatePayload 개인화된 전체 게임 스냅샷. 모든 상태 변경 후
 // 좌석마다 따로 만들어 보낸다. 재접속 복원도 같은 페이로드를 쓴다.
 type DVGameStatePayload struct {
-	GameID         string  `json:"gameId"`
+	GameID string `json:"gameId"`
+	// RoomCode 사설 방 초대 코드 (공용 로비는 "") — 재접속 복원용
+	RoomCode       string  `json:"roomCode"`
 	YourSeat       int     `json:"yourSeat"`
 	Phase          DVPhase `json:"phase"`
 	CurrentSeat    int     `json:"currentSeat"`

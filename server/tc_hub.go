@@ -19,6 +19,9 @@ type tcRoom struct {
 	Game    *TCGame
 	Clients map[int]*TCClient // seat → client
 
+	// Code 사설 방 초대 코드 (공용 로비는 "")
+	Code string
+
 	// HandEndTimer hand_end 자동 진행 타이머 (허브 채널 경유로만 상태를 만진다)
 	HandEndTimer *time.Timer
 
@@ -53,8 +56,12 @@ type TCHub struct {
 	// 진행/대기 중인 방 (gameID → room)
 	rooms map[string]*tcRoom
 
-	// 글로벌 로비. 시작 전 방은 하나뿐이다.
+	// 글로벌 로비. 시작 전 공용 방은 하나뿐이다.
 	lobby *tcRoom
+
+	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
+	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	privateLobbies map[string]*tcRoom
 
 	// 클라이언트 등록
 	register chan *TCClient
@@ -87,6 +94,7 @@ func NewTCHub() *TCHub {
 		unregister:     make(chan *TCClient),
 		clients:        make(map[*TCClient]bool),
 		rooms:          make(map[string]*tcRoom),
+		privateLobbies: make(map[string]*tcRoom),
 		gameMessage:    make(chan TCGameMessage),
 		handEndFired:   make(chan tcHandEndSignal, 8),
 		afkFired:       make(chan tcAfkSignal, 8),
@@ -168,14 +176,7 @@ func (h *TCHub) handleJoinGame(client *TCClient, msg TCMessage) {
 	var payload TCJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
-	if h.lobby == nil {
-		game := NewTCGame(uuid.New().String())
-		h.lobby = &tcRoom{Game: game, Clients: map[int]*TCClient{}}
-		h.rooms[game.ID] = h.lobby
-		log.Printf("[TC] Created lobby game %s", game.ID)
-	}
-
-	room := h.lobby
+	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
 		h.sendError(client, err.Error())
@@ -191,9 +192,11 @@ func (h *TCHub) handleJoinGame(client *TCClient, msg TCMessage) {
 
 	log.Printf("[티츄][입장] game=%s | seat%d=%s 로비 입장 (%d/%d)",
 		room.Game.ID, seat, displayName(client.Name), room.Game.PlayerCount, TCSeats)
-	notify("티츄 참가", fmt.Sprintf("%s 입장 (%d/%d)",
-		displayName(client.Name), room.Game.PlayerCount, TCSeats))
-	lobbySetWaiting("tichu", true)
+	if room.Code == "" { // 사설 방은 알림·로비 현황판 미반영 (초대 링크로만 접근)
+		notify("티츄 참가", fmt.Sprintf("%s 입장 (%d/%d)",
+			displayName(client.Name), room.Game.PlayerCount, TCSeats))
+		lobbySetWaiting("tichu", true)
+	}
 
 	h.sendToClient(client, TCMessage{
 		Type: TCMsgPlayerJoined,
@@ -202,6 +205,7 @@ func (h *TCHub) handleJoinGame(client *TCClient, msg TCMessage) {
 			SessionID: client.SessionID,
 			YourSeat:  seat,
 			Name:      client.Name,
+			RoomCode:  room.Code,
 		},
 	})
 	h.broadcastEvent(room, TCEventPayload{Kind: "joined", Seat: &seat,
@@ -213,9 +217,46 @@ func (h *TCHub) handleJoinGame(client *TCClient, msg TCMessage) {
 	}
 }
 
+// lobbyRoomFor join payload 의 room 값으로 입장할 시작 전 방을 찾거나 만든다.
+// 생략/빈 문자열은 기존 공용 로비 경로 그대로, "NEW"는 새 코드 발급,
+// 그 외 코드는 해당 사설 방 (없으면 그 코드로 관대하게 새로 생성).
+func (h *TCHub) lobbyRoomFor(roomField string) *tcRoom {
+	code := normalizeRoomCode(roomField)
+	if code == "" {
+		if h.lobby == nil {
+			game := NewTCGame(uuid.New().String())
+			h.lobby = &tcRoom{Game: game, Clients: map[int]*TCClient{}}
+			h.rooms[game.ID] = h.lobby
+			log.Printf("[TC] Created lobby game %s", game.ID)
+		}
+		return h.lobby
+	}
+	if code == roomCodeNew {
+		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+	}
+	room := h.privateLobbies[code]
+	if room == nil {
+		game := NewTCGame(uuid.New().String())
+		room = &tcRoom{Game: game, Clients: map[int]*TCClient{}, Code: code}
+		h.privateLobbies[code] = room
+		h.rooms[game.ID] = room
+		log.Printf("[TC] Created private room %s (code=%s)", game.ID, code)
+	}
+	return room
+}
+
+// waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
+func (h *TCHub) waitingRoomOf(client *TCClient) *tcRoom {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Started {
+		return nil
+	}
+	return room
+}
+
 func (h *TCHub) handleSetTarget(client *TCClient, msg TCMessage) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		h.sendError(client, "대기실을 찾을 수 없습니다")
 		return
 	}
@@ -235,8 +276,8 @@ func (h *TCHub) handleSetTarget(client *TCClient, msg TCMessage) {
 }
 
 func (h *TCHub) handleFillBots(client *TCClient) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		h.sendError(client, "대기실을 찾을 수 없습니다")
 		return
 	}
@@ -257,8 +298,12 @@ func (h *TCHub) handleFillBots(client *TCClient) {
 }
 
 func (h *TCHub) startGame(room *tcRoom) {
-	h.lobby = nil // 시작한 방은 로비에서 떼어낸다
-	lobbySetWaiting("tichu", false)
+	if room.Code != "" {
+		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+	} else {
+		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
+		lobbySetWaiting("tichu", false)
+	}
 	room.Game.StartHand(h.rng)
 
 	names := []string{}
@@ -300,8 +345,12 @@ func (h *TCHub) removeFromLobby(room *tcRoom, client *TCClient) {
 
 	if room.Game.PlayerCount == 0 {
 		delete(h.rooms, room.Game.ID)
-		h.lobby = nil
-		lobbySetWaiting("tichu", false)
+		if room.Code != "" {
+			delete(h.privateLobbies, room.Code)
+		} else {
+			h.lobby = nil
+			lobbySetWaiting("tichu", false)
+		}
 		return
 	}
 	seat := oldSeat
@@ -568,6 +617,7 @@ func (h *TCHub) buildTCState(room *tcRoom, viewerSeat int) TCGameStatePayload {
 
 	return TCGameStatePayload{
 		GameID:            g.ID,
+		RoomCode:          room.Code,
 		Phase:             g.Phase,
 		TargetScore:       g.Target,
 		YourSeat:          viewerSeat,

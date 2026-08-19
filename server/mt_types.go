@@ -149,6 +149,9 @@ type MTGame struct {
 
 type MTJoinGamePayload struct {
 	Name string `json:"name"`
+	// Room 선택 필드 — ""(생략)=공용 로비, "NEW"=새 사설 방 생성(코드 발급),
+	// 4자 코드=해당 사설 방 입장 (없으면 그 코드로 새로 생성)
+	Room string `json:"room,omitempty"`
 }
 
 type MTRejoinPayload struct {
@@ -233,7 +236,9 @@ type MTResultView struct {
 // MTGameStatePayload 개인화 게임 스냅샷 (은닉형 — 남의 손패는 개수만,
 // 키티는 kitty 단계의 주공에게만)
 type MTGameStatePayload struct {
-	GameID          string         `json:"gameId"`
+	GameID string `json:"gameId"`
+	// RoomCode 사설 방 초대 코드 (공용 로비는 "") — 대기실 코드 표시·재접속 복원용
+	RoomCode        string         `json:"roomCode"`
 	Phase           MTPhase        `json:"phase"`
 	YourSeat        int            `json:"yourSeat"`
 	Players         []MTPlayerView `json:"players"`

@@ -179,6 +179,9 @@ type SPGame struct {
 
 type SPJoinGamePayload struct {
 	Name string `json:"name"`
+	// Room 선택 필드 — ""(생략)=공용 로비, "NEW"=새 사설 방 생성(코드 발급),
+	// 4자 코드=해당 사설 방 입장 (없으면 그 코드로 새로 생성)
+	Room string `json:"room,omitempty"`
 }
 
 type SPRejoinPayload struct {
@@ -238,7 +241,9 @@ type SPResultView struct {
 // 비스파이 스냅샷에는 스파이 좌석 정보가 어떤 형태로도 없어야 한다.
 // isSpy 는 본인 것만, location 은 비스파이에게만 채운다 (스파이·waiting 은 빈).
 type SPGameStatePayload struct {
-	GameID       string  `json:"gameId"`
+	GameID string `json:"gameId"`
+	// RoomCode 사설 방 초대 코드 (공용 로비는 "") — 대기실 코드 표시·재접속 복원용
+	RoomCode     string  `json:"roomCode"`
 	Phase        SPPhase `json:"phase"`
 	HostSeat     int     `json:"hostSeat"`
 	YourSeat     int     `json:"yourSeat"`

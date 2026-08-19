@@ -29,6 +29,9 @@ type sfRoom struct {
 	Game       *SFGame
 	Clients    map[int]*SFClient // seat → client
 	PhaseTimer *time.Timer       // day_result/execution 자동 진행 타이머
+
+	// Code 사설 방 초대 코드 (공용 로비는 "")
+	Code string
 }
 
 // sfPhaseSignal 자동 진행 타이머의 발화 표식. 발화 시점의 (단계, 일차)가
@@ -46,8 +49,12 @@ type SFHub struct {
 	// 진행/대기 중인 방 (gameID → room)
 	rooms map[string]*sfRoom
 
-	// 글로벌 로비. 시작 전 방은 하나뿐이다.
+	// 글로벌 로비. 시작 전 공용 방은 하나뿐이다.
 	lobby *sfRoom
+
+	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
+	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	privateLobbies map[string]*sfRoom
 
 	// 클라이언트 등록
 	register chan *SFClient
@@ -79,6 +86,7 @@ func NewSFHub() *SFHub {
 		unregister:     make(chan *SFClient),
 		clients:        make(map[*SFClient]bool),
 		rooms:          make(map[string]*sfRoom),
+		privateLobbies: make(map[string]*sfRoom),
 		gameMessage:    make(chan SFGameMessage),
 		phaseFired:     make(chan sfPhaseSignal, 8),
 		sessionManager: newSessionManager[*SFClient](),
@@ -146,14 +154,7 @@ func (h *SFHub) handleJoinGame(client *SFClient, msg SFMessage) {
 	var payload SFJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
-	if h.lobby == nil {
-		game := NewSFGame(uuid.New().String())
-		h.lobby = &sfRoom{Game: game, Clients: map[int]*SFClient{}}
-		h.rooms[game.ID] = h.lobby
-		log.Printf("[SF] Created lobby game %s", game.ID)
-	}
-
-	room := h.lobby
+	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
 		h.sendError(client, err.Error())
@@ -169,8 +170,10 @@ func (h *SFHub) handleJoinGame(client *SFClient, msg SFMessage) {
 
 	log.Printf("[마피아][입장] game=%s | seat%d=%s 게임 입장 (%d/%d)",
 		room.Game.ID, seat, displayName(client.Name), len(room.Game.Players), SFMaxPlayers)
-	notify("마피아 참가", fmt.Sprintf("%s 입장 (%d/%d)",
-		displayName(client.Name), len(room.Game.Players), SFMaxPlayers))
+	if room.Code == "" { // 사설 방 입장은 조용히 (공용 로비만 알림)
+		notify("마피아 참가", fmt.Sprintf("%s 입장 (%d/%d)",
+			displayName(client.Name), len(room.Game.Players), SFMaxPlayers))
+	}
 
 	h.sendToClient(client, SFMessage{
 		Type: SFMsgPlayerJoined,
@@ -178,12 +181,50 @@ func (h *SFHub) handleJoinGame(client *SFClient, msg SFMessage) {
 			"yourSeat":  seat,
 			"gameId":    room.Game.ID,
 			"sessionId": client.SessionID,
+			"roomCode":  room.Code,
 		},
 	})
 
 	h.broadcastEvent(room, SFEventPayload{Kind: "joined", Seat: &seat, Name: client.Name})
 	h.updateLobbyWaiting(room)
 	h.broadcastState(room)
+}
+
+// lobbyRoomFor join payload 의 room 값으로 입장할 시작 전 방을 찾거나 만든다.
+// 생략/빈 문자열은 기존 공용 로비 경로 그대로, "NEW"는 새 코드 발급,
+// 그 외 코드는 해당 사설 방 (없으면 그 코드로 관대하게 새로 생성).
+func (h *SFHub) lobbyRoomFor(roomField string) *sfRoom {
+	code := normalizeRoomCode(roomField)
+	if code == "" {
+		if h.lobby == nil {
+			game := NewSFGame(uuid.New().String())
+			h.lobby = &sfRoom{Game: game, Clients: map[int]*SFClient{}}
+			h.rooms[game.ID] = h.lobby
+			log.Printf("[SF] Created lobby game %s", game.ID)
+		}
+		return h.lobby
+	}
+	if code == roomCodeNew {
+		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+	}
+	room := h.privateLobbies[code]
+	if room == nil {
+		game := NewSFGame(uuid.New().String())
+		room = &sfRoom{Game: game, Clients: map[int]*SFClient{}, Code: code}
+		h.privateLobbies[code] = room
+		h.rooms[game.ID] = room
+		log.Printf("[SF] Created private room %s (code=%s)", game.ID, code)
+	}
+	return room
+}
+
+// waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
+func (h *SFHub) waitingRoomOf(client *SFClient) *sfRoom {
+	room := h.rooms[client.GameID]
+	if room == nil || room.Game.Ready {
+		return nil
+	}
+	return room
 }
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
@@ -204,8 +245,8 @@ func (h *SFHub) hostSeat(room *sfRoom) int {
 // handleFillBots host 가 최소 성립 인원(6)까지 연습봇으로 채운다.
 // 봇은 연습용이라 정원(10)까지 채우지 않는다. 시작은 별도의 sf_start.
 func (h *SFHub) handleFillBots(client *SFClient) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		h.sendError(client, "로비를 찾을 수 없습니다")
 		return
 	}
@@ -235,8 +276,8 @@ func (h *SFHub) handleFillBots(client *SFClient) {
 }
 
 func (h *SFHub) handleStart(client *SFClient) {
-	room := h.lobby
-	if room == nil || client.GameID != room.Game.ID {
+	room := h.waitingRoomOf(client)
+	if room == nil {
 		h.sendError(client, "로비를 찾을 수 없습니다")
 		return
 	}
@@ -272,8 +313,12 @@ func sfRoomHasBot(room *sfRoom) bool {
 	return false
 }
 
-// updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작
+// updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작.
+// 사설 방은 현황판에 노출하지 않는다 (초대 링크로만 접근).
 func (h *SFHub) updateLobbyWaiting(room *sfRoom) {
+	if room.Code != "" {
+		return
+	}
 	waiting := h.lobby != nil && h.lobby == room && !room.Game.Ready && sfHumanCount(room) >= 1
 	lobbySetWaiting("skyfall", waiting)
 }
@@ -282,8 +327,12 @@ func (h *SFHub) startGame(room *sfRoom) {
 	if err := room.Game.Start(h.rng); err != nil {
 		return
 	}
-	h.lobby = nil // 시작한 방은 로비에서 떼어낸다
-	lobbySetWaiting("skyfall", false)
+	if room.Code != "" {
+		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+	} else {
+		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
+		lobbySetWaiting("skyfall", false)
+	}
 
 	names := []string{}
 	for _, p := range room.Game.Players {
@@ -339,7 +388,11 @@ func (h *SFHub) removeFromLobby(room *sfRoom, client *SFClient) {
 		if h.lobby == room {
 			h.lobby = nil
 		}
-		lobbySetWaiting("skyfall", false)
+		if room.Code != "" {
+			delete(h.privateLobbies, room.Code)
+		} else {
+			lobbySetWaiting("skyfall", false)
+		}
 		return
 	}
 
@@ -578,6 +631,7 @@ func (h *SFHub) buildSFState(room *sfRoom, viewerSeat int) SFGameStatePayload {
 
 	return SFGameStatePayload{
 		GameID:        game.ID,
+		RoomCode:      room.Code,
 		Phase:         game.Phase,
 		DayNo:         game.DayNo,
 		EndsAt:        endsAt,
