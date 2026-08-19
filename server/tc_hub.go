@@ -30,6 +30,13 @@ type tcRoom struct {
 	AfkTimer *time.Timer
 	// AfkSeq 상태 변경 일련번호 (뒤늦은 발화 무시용)
 	AfkSeq int
+
+	// Spectators 관전자 연결 (사설 방 코드로만 진입, 상한 maxSpectators).
+	// 좌석·세션이 없어 재접속을 지원하지 않는다 — 끊기면 목록에서만 뗀다.
+	Spectators map[*TCClient]bool
+
+	// LastReact 좌석별 마지막 리액션 발신 시각 (레이트리밋 장부)
+	LastReact map[int]time.Time
 }
 
 // tcAfkSignal AFK 타이머 발화 표식
@@ -60,8 +67,12 @@ type TCHub struct {
 	lobby *tcRoom
 
 	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
-	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	// 시작하면 privateLobbies 에서 activeCodes 로 옮긴다.
 	privateLobbies map[string]*tcRoom
+
+	// 진행 중 사설 방 (초대 코드 → gameID). 시작 후에도 코드로 방을 찾아
+	// 관전 입장시키는 근거다. finishGame 에서 해제한다 (코드 재사용 복귀).
+	activeCodes map[string]string
 
 	// 클라이언트 등록
 	register chan *TCClient
@@ -95,6 +106,7 @@ func NewTCHub() *TCHub {
 		clients:        make(map[*TCClient]bool),
 		rooms:          make(map[string]*tcRoom),
 		privateLobbies: make(map[string]*tcRoom),
+		activeCodes:    make(map[string]string),
 		gameMessage:    make(chan TCGameMessage),
 		handEndFired:   make(chan tcHandEndSignal, 8),
 		afkFired:       make(chan tcAfkSignal, 8),
@@ -137,9 +149,16 @@ func (h *TCHub) Run() {
 }
 
 func (h *TCHub) handleGameMessage(gm TCGameMessage) {
+	// 관전자는 어떤 행동도 할 수 없다 (보기 전용 — 리액션도 좌석 보유자만)
+	if h.isSpectator(gm.Client) {
+		h.sendError(gm.Client, spectatorDeniedMsg)
+		return
+	}
 	switch gm.Message.Type {
 	case TCMsgJoinGame:
 		h.handleJoinGame(gm.Client, gm.Message)
+	case TCMsgReact:
+		h.handleReact(gm.Client, gm.Message)
 	case TCMsgSetTarget:
 		h.handleSetTarget(gm.Client, gm.Message)
 	case TCMsgFillBots:
@@ -176,9 +195,20 @@ func (h *TCHub) handleJoinGame(client *TCClient, msg TCMessage) {
 	var payload TCJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
+	// 이미 시작된 사설 방의 코드로 들어오면 에러 대신 관전자로 입장시킨다
+	if gameID, ok := h.activeCodes[normalizeRoomCode(payload.Room)]; ok {
+		h.addSpectator(h.rooms[gameID], client, payload.Name)
+		return
+	}
+
 	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
+		// 사설 방이 가득 차 못 앉는 경우도 관전 진입 (공용 로비는 기존 에러)
+		if room.Code != "" {
+			h.addSpectator(room, client, payload.Name)
+			return
+		}
 		h.sendError(client, err.Error())
 		return
 	}
@@ -232,7 +262,11 @@ func (h *TCHub) lobbyRoomFor(roomField string) *tcRoom {
 		return h.lobby
 	}
 	if code == roomCodeNew {
-		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+		taken := takenCodes(h.privateLobbies)
+		for c := range h.activeCodes { // 진행 중 방의 코드도 재사용 금지
+			taken[c] = true
+		}
+		code = generateRoomCode(h.rng, taken)
 	}
 	room := h.privateLobbies[code]
 	if room == nil {
@@ -243,6 +277,67 @@ func (h *TCHub) lobbyRoomFor(roomField string) *tcRoom {
 		log.Printf("[TC] Created private room %s (code=%s)", game.ID, code)
 	}
 	return room
+}
+
+// ==================== 관전 / 리액션 ====================
+
+// addSpectator 진행 중(또는 가득 찬) 사설 방에 관전자로 등록한다.
+// 좌석·세션 없음 — 재접속 미지원, 끊기면 다시 코드로 들어온다.
+func (h *TCHub) addSpectator(room *tcRoom, client *TCClient, name string) {
+	if len(room.Spectators) >= maxSpectators {
+		h.sendError(client, spectatorFullMsg)
+		return
+	}
+	if room.Spectators == nil {
+		room.Spectators = map[*TCClient]bool{}
+	}
+	client.Name = name
+	client.GameID = room.Game.ID
+	room.Spectators[client] = true
+
+	log.Printf("[티츄][관전] game=%s | %s 관전 입장 (%d명)",
+		room.Game.ID, displayName(name), len(room.Spectators))
+
+	h.sendToClient(client, TCMessage{
+		Type:    TCMsgSpectateJoined,
+		Payload: map[string]interface{}{"gameId": room.Game.ID, "roomCode": room.Code},
+	})
+	// 전원(관전자 포함)에게 관전자 수가 반영된 스냅샷 — 신규 관전자의 첫 스냅샷 겸용
+	h.broadcastState(room)
+}
+
+// isSpectator 관전자 연결인지 (좌석 보유자·미입장 연결은 false)
+func (h *TCHub) isSpectator(client *TCClient) bool {
+	if client.GameID == "" {
+		return false
+	}
+	room := h.rooms[client.GameID]
+	return room != nil && room.Spectators[client]
+}
+
+// handleReact 리액션 이모지 — 좌석 보유자만, waiting 중에도 허용.
+// 화이트리스트 외·레이트리밋 초과는 조용히 무시한다 (상태 저장 없음).
+func (h *TCHub) handleReact(client *TCClient, msg TCMessage) {
+	room := h.rooms[client.GameID]
+	if room == nil || client.Seat < 0 {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload TCReactPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if !reactAllowed(payload.Emoji) {
+		return
+	}
+	if room.LastReact == nil {
+		room.LastReact = map[int]time.Time{}
+	}
+	if !reactPass(room.LastReact, client.Seat, time.Now()) {
+		return
+	}
+	seat := client.Seat
+	h.broadcastEvent(room, TCEventPayload{Kind: "react", Seat: &seat, Name: client.Name, Message: payload.Emoji})
 }
 
 // waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
@@ -299,7 +394,9 @@ func (h *TCHub) handleFillBots(client *TCClient) {
 
 func (h *TCHub) startGame(room *tcRoom) {
 	if room.Code != "" {
-		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+		// 시작한 사설 방의 코드는 진행 중 장부로 옮긴다 (관전 입장 근거)
+		delete(h.privateLobbies, room.Code)
+		h.activeCodes[room.Code] = room.Game.ID
 	} else {
 		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
 		lobbySetWaiting("tichu", false)
@@ -600,13 +697,17 @@ func (h *TCHub) buildTCState(room *tcRoom, viewerSeat int) TCGameStatePayload {
 		}
 	}
 
+	// 관전자(viewerSeat -1)는 좌석 배열 인덱스 접근이 불가 — 손패는 빈 배열,
+	// 좌석 개인화 플래그는 false 로 둔다 (공개 정보만 담긴 스냅샷)
 	yourHand := []string{}
-	switch g.Phase {
-	case TCPhaseWaiting:
-	case TCPhaseGrand:
-		yourHand = tcSortHand(g.Dealt[viewerSeat][:8])
-	default:
-		yourHand = tcSortHand(g.Hands[viewerSeat])
+	if viewerSeat >= 0 {
+		switch g.Phase {
+		case TCPhaseWaiting:
+		case TCPhaseGrand:
+			yourHand = tcSortHand(g.Dealt[viewerSeat][:8])
+		default:
+			yourHand = tcSortHand(g.Hands[viewerSeat])
+		}
 	}
 
 	trick := append([]TCTrickPlay{}, g.Trick...)
@@ -623,8 +724,9 @@ func (h *TCHub) buildTCState(room *tcRoom, viewerSeat int) TCGameStatePayload {
 		YourSeat:          viewerSeat,
 		Players:           players,
 		YourHand:          yourHand,
-		ExchangeDone:      g.ExchangeSub[viewerSeat] != nil,
-		GrandAnswered:     g.GrandAnswered[viewerSeat],
+		Spectators:        len(room.Spectators),
+		ExchangeDone:      viewerSeat >= 0 && g.ExchangeSub[viewerSeat] != nil,
+		GrandAnswered:     viewerSeat >= 0 && g.GrandAnswered[viewerSeat],
 		Scores:            TCScores{Team02: g.Score02, Team13: g.Score13},
 		HandNo:            g.HandNo,
 		CurrentTurn:       g.CurrentTurn,
@@ -637,7 +739,8 @@ func (h *TCHub) buildTCState(room *tcRoom, viewerSeat int) TCGameStatePayload {
 	}
 }
 
-// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다
+// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다.
+// 관전자에게는 공개 정보만 담긴 스냅샷(viewerSeat -1)이 간다.
 func (h *TCHub) broadcastState(room *tcRoom) {
 	for seat, c := range room.Clients {
 		if c == nil {
@@ -647,6 +750,12 @@ func (h *TCHub) broadcastState(room *tcRoom) {
 			Type:    TCMsgGameState,
 			Payload: h.buildTCState(room, seat),
 		})
+	}
+	if len(room.Spectators) > 0 {
+		msg := TCMessage{Type: TCMsgGameState, Payload: h.buildTCState(room, -1)}
+		for c := range room.Spectators {
+			h.sendToClient(c, msg)
+		}
 	}
 	h.resetAfkTimer(room)
 }
@@ -759,6 +868,9 @@ func (h *TCHub) finishGame(room *tcRoom) {
 
 	h.clearGameSessions(room)
 	delete(h.rooms, g.ID)
+	if room.Code != "" {
+		delete(h.activeCodes, room.Code) // 코드 재사용 복귀
+	}
 }
 
 // tcRoomHasBot 방에 연습봇이 있는지
@@ -774,6 +886,12 @@ func tcRoomHasBot(room *tcRoom) bool {
 // ==================== 재접속 / 연결 끊김 / 봇 대체 ====================
 
 func (h *TCHub) handleDisconnect(client *TCClient) {
+	// 관전자 연결 종료 — 세션·유예 없이 목록에서만 뗀다
+	if room := h.rooms[client.GameID]; room != nil && room.Spectators[client] {
+		delete(room.Spectators, client)
+		h.broadcastState(room) // 관전자 수 갱신
+		return
+	}
 	// 게임 참가 전에 끊긴 연결
 	if client.SessionID == "" {
 		return
@@ -915,5 +1033,8 @@ func (h *TCHub) broadcastToRoom(room *tcRoom, message TCMessage) {
 		if c != nil {
 			h.sendToClient(c, message)
 		}
+	}
+	for c := range room.Spectators { // 이벤트·종료 발표는 관전자에게도 간다
+		h.sendToClient(c, message)
 	}
 }

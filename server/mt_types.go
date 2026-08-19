@@ -49,9 +49,11 @@ const (
 	MTMsgKitty    MTMessageType = "mt_kitty"
 	MTMsgFriend   MTMessageType = "mt_friend"
 	MTMsgPlay     MTMessageType = "mt_play"
+	MTMsgReact    MTMessageType = "mt_react"
 
 	// 서버 → 클라이언트
 	MTMsgPlayerJoined         MTMessageType = "mt_player_joined"
+	MTMsgSpectateJoined       MTMessageType = "mt_spectate_joined"
 	MTMsgGameState            MTMessageType = "mt_game_state"
 	MTMsgEvent                MTMessageType = "mt_event"
 	MTMsgGameOver             MTMessageType = "mt_game_over"
@@ -179,6 +181,11 @@ type MTPlayPayload struct {
 	JokerSuit string `json:"jokerSuit,omitempty"`
 }
 
+// MTReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type MTReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 type MTErrorPayload struct {
@@ -243,6 +250,8 @@ type MTGameStatePayload struct {
 	YourSeat        int            `json:"yourSeat"`
 	Players         []MTPlayerView `json:"players"`
 	YourHand        []string       `json:"yourHand"`
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 	Bidding         MTBiddingView  `json:"bidding"`
 	Contract        *MTContractView `json:"contract"`
 	YourKitty       []string       `json:"yourKitty"`
@@ -261,10 +270,12 @@ type MTGameStatePayload struct {
 //
 //	friend_revealed|play|joker_call|trick_won|bot_takeover
 type MTEventPayload struct {
-	Kind       string `json:"kind"`
-	Seat       *int   `json:"seat,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Suit       string `json:"suit,omitempty"`
+	Kind string `json:"kind"`
+	Seat *int   `json:"seat,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Message react(이모지) 등 연출 텍스트
+	Message string `json:"message,omitempty"`
+	Suit    string `json:"suit,omitempty"`
 	Count      *int   `json:"count,omitempty"`
 	Card       string `json:"card,omitempty"`
 	FriendType string `json:"friendType,omitempty"`

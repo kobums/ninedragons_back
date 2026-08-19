@@ -58,9 +58,11 @@ const (
 	AVMsgTeamVote    AVMessageType = "av_team_vote"
 	AVMsgQuest       AVMessageType = "av_quest"
 	AVMsgAssassinate AVMessageType = "av_assassinate"
+	AVMsgReact       AVMessageType = "av_react"
 
 	// 서버 → 클라이언트
 	AVMsgPlayerJoined         AVMessageType = "av_player_joined"
+	AVMsgSpectateJoined       AVMessageType = "av_spectate_joined"
 	AVMsgGameState            AVMessageType = "av_game_state"
 	AVMsgEvent                AVMessageType = "av_event"
 	AVMsgGameOver             AVMessageType = "av_game_over"
@@ -170,6 +172,11 @@ type AVAssassinatePayload struct {
 	Seat int `json:"seat"`
 }
 
+// AVReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type AVReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 type AVErrorPayload struct {
@@ -218,6 +225,9 @@ type AVGameStatePayload struct {
 	EvilSeats []int  `json:"evilSeats,omitempty"` // 악 진영 + 멀린에게만
 
 	Players []AVPlayerView `json:"players"`
+
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 
 	Round      int      `json:"round"`
 	QuestSizes [5]int   `json:"questSizes"`

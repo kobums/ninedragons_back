@@ -108,9 +108,11 @@ const (
 	SPMsgGuess       SPMessageType = "sp_guess"
 	SPMsgVote        SPMessageType = "sp_vote"
 	SPMsgRejoin      SPMessageType = "sp_rejoin"
+	SPMsgReact       SPMessageType = "sp_react"
 
 	// 서버 → 클라이언트
 	SPMsgPlayerJoined         SPMessageType = "sp_player_joined"
+	SPMsgSpectateJoined       SPMessageType = "sp_spectate_joined"
 	SPMsgGameState            SPMessageType = "sp_game_state"
 	SPMsgEvent                SPMessageType = "sp_event"
 	SPMsgGameOver             SPMessageType = "sp_game_over"
@@ -204,6 +206,11 @@ type SPVotePayload struct {
 	Target int `json:"target"`
 }
 
+// SPReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type SPReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 type SPErrorPayload struct {
@@ -256,6 +263,8 @@ type SPGameStatePayload struct {
 	IsSpy          bool           `json:"isSpy"`
 	Location       string         `json:"location"`
 	Players        []SPPlayerView `json:"players"`
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 	Votes          []SPVoteView   `json:"votes"`
 	Result         *SPResultView  `json:"result"`
 }

@@ -192,18 +192,26 @@ func TestRoomCodePrivateStartDetachesAndKeepsPublicWaiting(t *testing.T) {
 		t.Fatalf("사설 방 시작이 공용 로비 현황판을 껐다")
 	}
 
-	// 시작한 방은 privateLobbies 에서 제거 — 같은 코드 재입장은 새 방
+	// 시작한 방은 privateLobbies 에서 activeCodes 로 이동 — 같은 코드
+	// 재입장은 좌석이 아니라 관전으로 이어진다 (관전 모드 스펙)
 	late := spDial(t, url)
 	defer late.conn.Close()
-	joinedLate := spJoinRoom(t, late, "지각생", code)
-	if got := joinedLate["gameId"].(string); got == gameID {
-		t.Fatalf("시작한 사설 방(gameId=%s)에 코드로 재입장됐다", gameID)
+	late.send(t, SPMessage{Type: SPMsgJoinGame, Payload: SPJoinGamePayload{Name: "지각생", Room: code}})
+	spectate := asPayloadMap(t, late.waitFor(t, SPMsgSpectateJoined).Payload)
+	if got := spectate["gameId"].(string); got != gameID {
+		t.Fatalf("관전 입장 gameId = %q, want %q", got, gameID)
 	}
-	if got := joinedLate["roomCode"].(string); got != code {
-		t.Fatalf("재생성 방 roomCode = %q, want %q", got, code)
+	if got := spectate["roomCode"].(string); got != code {
+		t.Fatalf("관전 입장 roomCode = %q, want %q", got, code)
 	}
-	if seat := int(joinedLate["yourSeat"].(float64)); seat != 0 {
-		t.Fatalf("새 방 첫 좌석 = %d, want 0", seat)
+	// 관전 스냅샷은 yourSeat -1 + 장소 은닉 (공개 정보만)
+	specState := late.waitFor(t, SPMsgGameState)
+	sm := asPayloadMap(t, specState.Payload)
+	if sm["yourSeat"].(float64) != -1 {
+		t.Fatalf("관전 스냅샷 yourSeat = %v, want -1", sm["yourSeat"])
+	}
+	if loc, _ := sm["location"].(string); loc != "" {
+		t.Fatalf("관전 스냅샷에 location 이 노출됐다: %q", loc)
 	}
 }
 

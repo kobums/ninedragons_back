@@ -50,9 +50,11 @@ const (
 	DVMsgGuess          DVMessageType = "dv_guess"
 	DVMsgContinueChoice DVMessageType = "dv_continue_choice"
 	DVMsgRevealOwn      DVMessageType = "dv_reveal_own"
+	DVMsgReact          DVMessageType = "dv_react"
 
 	// 서버 → 클라이언트
 	DVMsgLobbyState         DVMessageType = "dv_lobby_state"
+	DVMsgSpectateJoined     DVMessageType = "dv_spectate_joined"
 	DVMsgGameState          DVMessageType = "dv_game_state"
 	DVMsgEvent              DVMessageType = "dv_event"
 	DVMsgGameOver           DVMessageType = "dv_game_over"
@@ -164,6 +166,11 @@ type DVRevealOwnPayload struct {
 	TileIndex int `json:"tileIndex"`
 }
 
+// DVReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type DVReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 // DVLobbyPlayer 로비 인원 목록 항목
@@ -224,6 +231,8 @@ type DVGameStatePayload struct {
 	YourPendingJokers []DVTileView   `json:"yourPendingJokers,omitempty"`
 	DrawnTile         *DVTileView    `json:"drawnTile,omitempty"`
 	Players           []DVPlayerView `json:"players"`
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 }
 
 // DVEventPayload 연출용 이벤트. 비밀 정보를 담지 않으며 전원에게 동일하게 간다.
@@ -240,6 +249,9 @@ type DVEventPayload struct {
 	Seat  *int        `json:"seat,omitempty"`
 	Color DVTileColor `json:"color,omitempty"`
 	Value *int        `json:"value,omitempty"`
+	// react — 발신자 이름과 이모지
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // DVGameOverPayload 게임 종료. 전 플레이어의 타일을 전부 공개해 보낸다.

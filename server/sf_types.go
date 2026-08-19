@@ -52,9 +52,11 @@ const (
 	SFMsgNightAction SFMessageType = "sf_night_action"
 	SFMsgVote        SFMessageType = "sf_vote"
 	SFMsgRejoin      SFMessageType = "sf_rejoin"
+	SFMsgReact       SFMessageType = "sf_react"
 
 	// 서버 → 클라이언트
 	SFMsgPlayerJoined         SFMessageType = "sf_player_joined"
+	SFMsgSpectateJoined       SFMessageType = "sf_spectate_joined"
 	SFMsgGameState            SFMessageType = "sf_game_state"
 	SFMsgEvent                SFMessageType = "sf_event"
 	SFMsgGameOver             SFMessageType = "sf_game_over"
@@ -144,6 +146,11 @@ type SFVotePayload struct {
 	Target int `json:"target"` // -1 = 기권
 }
 
+// SFReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type SFReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 type SFErrorPayload struct {
@@ -210,6 +217,8 @@ type SFGameStatePayload struct {
 	YourRole      string               `json:"yourRole"`
 	MafiaSeats    []int                `json:"mafiaSeats,omitempty"` // 마피아에게만
 	Players       []SFPlayerView       `json:"players"`
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 	Night         *SFNightView         `json:"night,omitempty"` // night 단계만
 	Investigation *SFInvestigationView `json:"investigation"`   // 경찰에게만, 그 외 null
 	Announcement  *SFAnnouncementView  `json:"announcement"`

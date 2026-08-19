@@ -19,6 +19,13 @@ type mtRoom struct {
 
 	// Code 사설 방 초대 코드 (공용 로비는 "")
 	Code string
+
+	// Spectators 관전자 연결 (사설 방 코드로만 진입, 상한 maxSpectators).
+	// 좌석·세션이 없어 재접속을 지원하지 않는다 — 끊기면 목록에서만 뗀다.
+	Spectators map[*MTClient]bool
+
+	// LastReact 좌석별 마지막 리액션 발신 시각 (레이트리밋 장부)
+	LastReact map[int]time.Time
 }
 
 type MTHub struct {
@@ -32,8 +39,12 @@ type MTHub struct {
 	lobby *mtRoom
 
 	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
-	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	// 시작하면 privateLobbies 에서 activeCodes 로 옮긴다.
 	privateLobbies map[string]*mtRoom
+
+	// 진행 중 사설 방 (초대 코드 → gameID). 시작 후에도 코드로 방을 찾아
+	// 관전 입장시키는 근거다. finishIfOver 에서 해제한다 (코드 재사용 복귀).
+	activeCodes map[string]string
 
 	// 클라이언트 등록
 	register chan *MTClient
@@ -63,6 +74,7 @@ func NewMTHub() *MTHub {
 		clients:        make(map[*MTClient]bool),
 		rooms:          make(map[string]*mtRoom),
 		privateLobbies: make(map[string]*mtRoom),
+		activeCodes:    make(map[string]string),
 		gameMessage:    make(chan MTGameMessage),
 		sessionManager: newSessionManager[*MTClient](),
 		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -97,9 +109,16 @@ func (h *MTHub) Run() {
 }
 
 func (h *MTHub) handleGameMessage(gm MTGameMessage) {
+	// 관전자는 어떤 행동도 할 수 없다 (보기 전용 — 리액션도 좌석 보유자만)
+	if h.isSpectator(gm.Client) {
+		h.sendError(gm.Client, spectatorDeniedMsg)
+		return
+	}
 	switch gm.Message.Type {
 	case MTMsgJoinGame:
 		h.handleJoinGame(gm.Client, gm.Message)
+	case MTMsgReact:
+		h.handleReact(gm.Client, gm.Message)
 	case MTMsgFillBots:
 		h.handleFillBots(gm.Client)
 	case MTMsgRejoin:
@@ -130,9 +149,20 @@ func (h *MTHub) handleJoinGame(client *MTClient, msg MTMessage) {
 	var payload MTJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
+	// 이미 시작된 사설 방의 코드로 들어오면 에러 대신 관전자로 입장시킨다
+	if gameID, ok := h.activeCodes[normalizeRoomCode(payload.Room)]; ok {
+		h.addSpectator(h.rooms[gameID], client, payload.Name)
+		return
+	}
+
 	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
+		// 사설 방이 가득 차 못 앉는 경우도 관전 진입 (공용 로비는 기존 에러)
+		if room.Code != "" {
+			h.addSpectator(room, client, payload.Name)
+			return
+		}
 		h.sendError(client, err.Error())
 		return
 	}
@@ -185,7 +215,11 @@ func (h *MTHub) lobbyRoomFor(roomField string) *mtRoom {
 		return h.lobby
 	}
 	if code == roomCodeNew {
-		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+		taken := takenCodes(h.privateLobbies)
+		for c := range h.activeCodes { // 진행 중 방의 코드도 재사용 금지
+			taken[c] = true
+		}
+		code = generateRoomCode(h.rng, taken)
 	}
 	room := h.privateLobbies[code]
 	if room == nil {
@@ -196,6 +230,67 @@ func (h *MTHub) lobbyRoomFor(roomField string) *mtRoom {
 		log.Printf("[MT] Created private room %s (code=%s)", game.ID, code)
 	}
 	return room
+}
+
+// ==================== 관전 / 리액션 ====================
+
+// addSpectator 진행 중(또는 가득 찬) 사설 방에 관전자로 등록한다.
+// 좌석·세션 없음 — 재접속 미지원, 끊기면 다시 코드로 들어온다.
+func (h *MTHub) addSpectator(room *mtRoom, client *MTClient, name string) {
+	if len(room.Spectators) >= maxSpectators {
+		h.sendError(client, spectatorFullMsg)
+		return
+	}
+	if room.Spectators == nil {
+		room.Spectators = map[*MTClient]bool{}
+	}
+	client.Name = name
+	client.GameID = room.Game.ID
+	room.Spectators[client] = true
+
+	log.Printf("[마이티][관전] game=%s | %s 관전 입장 (%d명)",
+		room.Game.ID, displayName(name), len(room.Spectators))
+
+	h.sendToClient(client, MTMessage{
+		Type:    MTMsgSpectateJoined,
+		Payload: map[string]interface{}{"gameId": room.Game.ID, "roomCode": room.Code},
+	})
+	// 전원(관전자 포함)에게 관전자 수가 반영된 스냅샷 — 신규 관전자의 첫 스냅샷 겸용
+	h.broadcastState(room)
+}
+
+// isSpectator 관전자 연결인지 (좌석 보유자·미입장 연결은 false)
+func (h *MTHub) isSpectator(client *MTClient) bool {
+	if client.GameID == "" {
+		return false
+	}
+	room := h.rooms[client.GameID]
+	return room != nil && room.Spectators[client]
+}
+
+// handleReact 리액션 이모지 — 좌석 보유자만, waiting 중에도 허용.
+// 화이트리스트 외·레이트리밋 초과는 조용히 무시한다 (상태 저장 없음).
+func (h *MTHub) handleReact(client *MTClient, msg MTMessage) {
+	room := h.rooms[client.GameID]
+	if room == nil || client.Seat < 0 {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload MTReactPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if !reactAllowed(payload.Emoji) {
+		return
+	}
+	if room.LastReact == nil {
+		room.LastReact = map[int]time.Time{}
+	}
+	if !reactPass(room.LastReact, client.Seat, time.Now()) {
+		return
+	}
+	seat := client.Seat
+	h.broadcastEvent(room, MTEventPayload{Kind: "react", Seat: &seat, Name: client.Name, Message: payload.Emoji})
 }
 
 // waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
@@ -290,7 +385,9 @@ func (h *MTHub) startGame(room *mtRoom) {
 		return
 	}
 	if room.Code != "" {
-		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+		// 시작한 사설 방의 코드는 진행 중 장부로 옮긴다 (관전 입장 근거)
+		delete(h.privateLobbies, room.Code)
+		h.activeCodes[room.Code] = room.Game.ID
 	} else {
 		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
 		lobbySetWaiting("mighty", false)
@@ -561,7 +658,10 @@ func (h *MTHub) buildMTState(room *mtRoom, viewerSeat int) MTGameStatePayload {
 		Phase:    game.Phase,
 		YourSeat: viewerSeat,
 		Players:  players,
-		YourHand: append([]string{}, game.Hands[viewerSeat]...),
+		// 관전자(viewerSeat -1)는 Hands 에 키가 없어 빈 배열이 된다
+		// (nil 슬라이스는 JSON null — append 로 빈 배열 보장)
+		YourHand:   append([]string{}, game.Hands[viewerSeat]...),
+		Spectators: len(room.Spectators),
 		Bidding:  MTBiddingView{Turn: game.BidTurn, Best: best},
 		Contract: contract,
 		YourKitty: yourKitty,
@@ -581,7 +681,8 @@ func (h *MTHub) buildMTState(room *mtRoom, viewerSeat int) MTGameStatePayload {
 	}
 }
 
-// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다
+// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다.
+// 관전자에게는 공개 정보만 담긴 스냅샷(viewerSeat -1)이 간다.
 func (h *MTHub) broadcastState(room *mtRoom) {
 	for seat, c := range room.Clients {
 		if c == nil {
@@ -591,6 +692,12 @@ func (h *MTHub) broadcastState(room *mtRoom) {
 			Type:    MTMsgGameState,
 			Payload: h.buildMTState(room, seat),
 		})
+	}
+	if len(room.Spectators) > 0 {
+		msg := MTMessage{Type: MTMsgGameState, Payload: h.buildMTState(room, -1)}
+		for c := range room.Spectators {
+			h.sendToClient(c, msg)
+		}
 	}
 }
 
@@ -636,11 +743,20 @@ func (h *MTHub) finishIfOver(room *mtRoom) {
 
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)
+	if room.Code != "" {
+		delete(h.activeCodes, room.Code) // 코드 재사용 복귀
+	}
 }
 
 // ==================== 재접속 / 연결 끊김 / 봇 대체 ====================
 
 func (h *MTHub) handleDisconnect(client *MTClient) {
+	// 관전자 연결 종료 — 세션·유예 없이 목록에서만 뗀다
+	if room := h.rooms[client.GameID]; room != nil && room.Spectators[client] {
+		delete(room.Spectators, client)
+		h.broadcastState(room) // 관전자 수 갱신
+		return
+	}
 	// 게임 참가 전에 끊긴 연결
 	if client.SessionID == "" {
 		return
@@ -779,5 +895,8 @@ func (h *MTHub) broadcastToRoom(room *mtRoom, message MTMessage) {
 		if c != nil {
 			h.sendToClient(c, message)
 		}
+	}
+	for c := range room.Spectators { // 이벤트·종료 발표는 관전자에게도 간다
+		h.sendToClient(c, message)
 	}
 }

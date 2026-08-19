@@ -60,9 +60,11 @@ const (
 	TCMsgDragonGive TCMessageType = "tc_dragon_give"
 	TCMsgReady      TCMessageType = "tc_ready"
 	TCMsgRejoin     TCMessageType = "tc_rejoin"
+	TCMsgReact      TCMessageType = "tc_react"
 
 	// 서버 → 클라이언트
 	TCMsgPlayerJoined         TCMessageType = "tc_player_joined"
+	TCMsgSpectateJoined       TCMessageType = "tc_spectate_joined"
 	TCMsgGameState            TCMessageType = "tc_game_state"
 	TCMsgEvent                TCMessageType = "tc_event"
 	TCMsgGameOver             TCMessageType = "tc_game_over"
@@ -181,6 +183,11 @@ type TCRejoinPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+// TCReactPayload 리액션 이모지 (화이트리스트 6종 외는 조용히 무시)
+type TCReactPayload struct {
+	Emoji string `json:"emoji"`
+}
+
 // ==================== 서버 → 클라이언트 payload ====================
 
 // TCPlayerView 좌석 하나의 공개 정보 (손패는 개수만)
@@ -228,6 +235,8 @@ type TCGameStatePayload struct {
 	YourSeat          int            `json:"yourSeat"`
 	Players           []TCPlayerView `json:"players"`
 	YourHand          []string       `json:"yourHand"`
+	// Spectators 관전자 수 (참가자·관전자 모두 표시용)
+	Spectators int `json:"spectators"`
 	ExchangeDone      bool           `json:"exchangeDone"`
 	GrandAnswered     bool           `json:"grandAnswered"`
 	Scores            TCScores       `json:"scores"`
@@ -245,8 +254,10 @@ type TCGameStatePayload struct {
 // play/pass/trick_won/bomb/dog/wish/wish_done/player_out/dragon_given/
 // hand_end/bot_takeover
 type TCEventPayload struct {
-	Kind    string `json:"kind"`
-	Seat    *int   `json:"seat,omitempty"`
+	Kind string `json:"kind"`
+	Seat *int   `json:"seat,omitempty"`
+	// Name react 이벤트의 발신자 이름 (그 외 kind 는 생략)
+	Name    string `json:"name,omitempty"`
 	Message string `json:"message"`
 }
 

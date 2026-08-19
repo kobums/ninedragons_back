@@ -33,6 +33,13 @@ type avRoom struct {
 
 	// Code 사설 방 초대 코드 (공용 로비는 "")
 	Code string
+
+	// Spectators 관전자 연결 (사설 방 코드로만 진입, 상한 maxSpectators).
+	// 좌석·세션이 없어 재접속을 지원하지 않는다 — 끊기면 목록에서만 뗀다.
+	Spectators map[*AVClient]bool
+
+	// LastReact 좌석별 마지막 리액션 발신 시각 (레이트리밋 장부)
+	LastReact map[int]time.Time
 }
 
 // avPhaseSignal 타임아웃 타이머의 발화 표식. 아발론은 같은 (phase, round)가
@@ -53,8 +60,12 @@ type AVHub struct {
 	lobby *avRoom
 
 	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
-	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	// 시작하면 privateLobbies 에서 activeCodes 로 옮긴다.
 	privateLobbies map[string]*avRoom
+
+	// 진행 중 사설 방 (초대 코드 → gameID). 시작 후에도 코드로 방을 찾아
+	// 관전 입장시키는 근거다. finishGame 에서 해제한다 (코드 재사용 복귀).
+	activeCodes map[string]string
 
 	// 클라이언트 등록
 	register chan *AVClient
@@ -87,6 +98,7 @@ func NewAVHub() *AVHub {
 		clients:        make(map[*AVClient]bool),
 		rooms:          make(map[string]*avRoom),
 		privateLobbies: make(map[string]*avRoom),
+		activeCodes:    make(map[string]string),
 		gameMessage:    make(chan AVGameMessage),
 		phaseFired:     make(chan avPhaseSignal, 8),
 		sessionManager: newSessionManager[*AVClient](),
@@ -125,9 +137,16 @@ func (h *AVHub) Run() {
 }
 
 func (h *AVHub) handleGameMessage(gm AVGameMessage) {
+	// 관전자는 어떤 행동도 할 수 없다 (보기 전용 — 리액션도 좌석 보유자만)
+	if h.isSpectator(gm.Client) {
+		h.sendError(gm.Client, spectatorDeniedMsg)
+		return
+	}
 	switch gm.Message.Type {
 	case AVMsgJoinGame:
 		h.handleJoinGame(gm.Client, gm.Message)
+	case AVMsgReact:
+		h.handleReact(gm.Client, gm.Message)
 	case AVMsgFillBots:
 		h.handleFillBots(gm.Client)
 	case AVMsgStart:
@@ -158,9 +177,20 @@ func (h *AVHub) handleJoinGame(client *AVClient, msg AVMessage) {
 	var payload AVJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
+	// 이미 시작된 사설 방의 코드로 들어오면 에러 대신 관전자로 입장시킨다
+	if gameID, ok := h.activeCodes[normalizeRoomCode(payload.Room)]; ok {
+		h.addSpectator(h.rooms[gameID], client, payload.Name)
+		return
+	}
+
 	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
+		// 사설 방이 가득 차 못 앉는 경우도 관전 진입 (공용 로비는 기존 에러)
+		if room.Code != "" {
+			h.addSpectator(room, client, payload.Name)
+			return
+		}
 		h.sendError(client, err.Error())
 		return
 	}
@@ -209,7 +239,11 @@ func (h *AVHub) lobbyRoomFor(roomField string) *avRoom {
 		return h.lobby
 	}
 	if code == roomCodeNew {
-		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+		taken := takenCodes(h.privateLobbies)
+		for c := range h.activeCodes { // 진행 중 방의 코드도 재사용 금지
+			taken[c] = true
+		}
+		code = generateRoomCode(h.rng, taken)
 	}
 	room := h.privateLobbies[code]
 	if room == nil {
@@ -220,6 +254,67 @@ func (h *AVHub) lobbyRoomFor(roomField string) *avRoom {
 		log.Printf("[AV] Created private room %s (code=%s)", game.ID, code)
 	}
 	return room
+}
+
+// ==================== 관전 / 리액션 ====================
+
+// addSpectator 진행 중(또는 가득 찬) 사설 방에 관전자로 등록한다.
+// 좌석·세션 없음 — 재접속 미지원, 끊기면 다시 코드로 들어온다.
+func (h *AVHub) addSpectator(room *avRoom, client *AVClient, name string) {
+	if len(room.Spectators) >= maxSpectators {
+		h.sendError(client, spectatorFullMsg)
+		return
+	}
+	if room.Spectators == nil {
+		room.Spectators = map[*AVClient]bool{}
+	}
+	client.Name = name
+	client.GameID = room.Game.ID
+	room.Spectators[client] = true
+
+	log.Printf("[아발론][관전] game=%s | %s 관전 입장 (%d명)",
+		room.Game.ID, displayName(name), len(room.Spectators))
+
+	h.sendToClient(client, AVMessage{
+		Type:    AVMsgSpectateJoined,
+		Payload: map[string]interface{}{"gameId": room.Game.ID, "roomCode": room.Code},
+	})
+	// 전원(관전자 포함)에게 관전자 수가 반영된 스냅샷 — 신규 관전자의 첫 스냅샷 겸용
+	h.broadcastState(room)
+}
+
+// isSpectator 관전자 연결인지 (좌석 보유자·미입장 연결은 false)
+func (h *AVHub) isSpectator(client *AVClient) bool {
+	if client.GameID == "" {
+		return false
+	}
+	room := h.rooms[client.GameID]
+	return room != nil && room.Spectators[client]
+}
+
+// handleReact 리액션 이모지 — 좌석 보유자만, waiting 중에도 허용.
+// 화이트리스트 외·레이트리밋 초과는 조용히 무시한다 (상태 저장 없음).
+func (h *AVHub) handleReact(client *AVClient, msg AVMessage) {
+	room := h.rooms[client.GameID]
+	if room == nil || client.Seat < 0 {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload AVReactPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if !reactAllowed(payload.Emoji) {
+		return
+	}
+	if room.LastReact == nil {
+		room.LastReact = map[int]time.Time{}
+	}
+	if !reactPass(room.LastReact, client.Seat, time.Now()) {
+		return
+	}
+	seat := client.Seat
+	h.broadcastEvent(room, AVEventPayload{Kind: "react", Seat: &seat, Name: client.Name, Message: payload.Emoji})
 }
 
 // waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
@@ -332,7 +427,9 @@ func (h *AVHub) startGame(room *avRoom) {
 		return
 	}
 	if room.Code != "" {
-		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+		// 시작한 사설 방의 코드는 진행 중 장부로 옮긴다 (관전 입장 근거)
+		delete(h.privateLobbies, room.Code)
+		h.activeCodes[room.Code] = room.Game.ID
 	} else {
 		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
 		lobbySetWaiting("avalon", false)
@@ -713,6 +810,7 @@ func (h *AVHub) buildAVState(room *avRoom, viewerSeat int) AVGameStatePayload {
 		YourRole:   yourRole,
 		EvilSeats:  evilSeats,
 		Players:    h.avPlayerViews(room),
+		Spectators: len(room.Spectators),
 		Round:      game.Round,
 		QuestSizes: game.QuestSizes,
 		// nil 슬라이스는 JSON null 로 나가 프론트 .length 접근이 죽는다 — 빈 배열 보장
@@ -727,7 +825,8 @@ func (h *AVHub) buildAVState(room *avRoom, viewerSeat int) AVGameStatePayload {
 	}
 }
 
-// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다
+// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다.
+// 관전자에게는 공개 정보만 담긴 스냅샷(viewerSeat -1)이 간다.
 func (h *AVHub) broadcastState(room *avRoom) {
 	for seat, c := range room.Clients {
 		if c == nil {
@@ -737,6 +836,12 @@ func (h *AVHub) broadcastState(room *avRoom) {
 			Type:    AVMsgGameState,
 			Payload: h.buildAVState(room, seat),
 		})
+	}
+	if len(room.Spectators) > 0 {
+		msg := AVMessage{Type: AVMsgGameState, Payload: h.buildAVState(room, -1)}
+		for c := range room.Spectators {
+			h.sendToClient(c, msg)
+		}
 	}
 }
 
@@ -791,11 +896,20 @@ func (h *AVHub) finishGame(room *avRoom) {
 
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)
+	if room.Code != "" {
+		delete(h.activeCodes, room.Code) // 코드 재사용 복귀
+	}
 }
 
 // ==================== 재접속 / 연결 끊김 / 봇 대체 ====================
 
 func (h *AVHub) handleDisconnect(client *AVClient) {
+	// 관전자 연결 종료 — 세션·유예 없이 목록에서만 뗀다
+	if room := h.rooms[client.GameID]; room != nil && room.Spectators[client] {
+		delete(room.Spectators, client)
+		h.broadcastState(room) // 관전자 수 갱신
+		return
+	}
 	// 게임 참가 전에 끊긴 연결
 	if client.SessionID == "" {
 		return
@@ -934,5 +1048,8 @@ func (h *AVHub) broadcastToRoom(room *avRoom, message AVMessage) {
 		if c != nil {
 			h.sendToClient(c, message)
 		}
+	}
+	for c := range room.Spectators { // 이벤트·종료 발표는 관전자에게도 간다
+		h.sendToClient(c, message)
 	}
 }

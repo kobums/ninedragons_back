@@ -29,6 +29,13 @@ type spRoom struct {
 
 	// Timer playing 종료(→ voting) 타이머
 	Timer *time.Timer
+
+	// Spectators 관전자 연결 (사설 방 코드로만 진입, 상한 maxSpectators).
+	// 좌석·세션이 없어 재접속을 지원하지 않는다 — 끊기면 목록에서만 뗀다.
+	Spectators map[*SPClient]bool
+
+	// LastReact 좌석별 마지막 리액션 발신 시각 (레이트리밋 장부)
+	LastReact map[int]time.Time
 }
 
 // spTimerSignal playing 타이머의 발화 표식. 발화 시점의 (게임, 단계)가
@@ -49,8 +56,12 @@ type SPHub struct {
 	lobby *spRoom
 
 	// 사설 방 (초대 코드 → 시작 전 방). 허브 고루틴에서만 접근한다.
-	// 시작하면 rooms 로만 유지하고 여기서는 뗀다 (코드 재사용 가능).
+	// 시작하면 privateLobbies 에서 activeCodes 로 옮긴다.
 	privateLobbies map[string]*spRoom
+
+	// 진행 중 사설 방 (초대 코드 → gameID). 시작 후에도 코드로 방을 찾아
+	// 관전 입장시키는 근거다. finishGame 에서 해제한다 (코드 재사용 복귀).
+	activeCodes map[string]string
 
 	// 클라이언트 등록
 	register chan *SPClient
@@ -83,6 +94,7 @@ func NewSPHub() *SPHub {
 		clients:        make(map[*SPClient]bool),
 		rooms:          make(map[string]*spRoom),
 		privateLobbies: make(map[string]*spRoom),
+		activeCodes:    make(map[string]string),
 		gameMessage:    make(chan SPGameMessage),
 		timerFired:     make(chan spTimerSignal, 8),
 		sessionManager: newSessionManager[*SPClient](),
@@ -121,9 +133,16 @@ func (h *SPHub) Run() {
 }
 
 func (h *SPHub) handleGameMessage(gm SPGameMessage) {
+	// 관전자는 어떤 행동도 할 수 없다 (보기 전용 — 리액션도 좌석 보유자만)
+	if h.isSpectator(gm.Client) {
+		h.sendError(gm.Client, spectatorDeniedMsg)
+		return
+	}
 	switch gm.Message.Type {
 	case SPMsgJoinGame:
 		h.handleJoinGame(gm.Client, gm.Message)
+	case SPMsgReact:
+		h.handleReact(gm.Client, gm.Message)
 	case SPMsgFillBots:
 		h.handleFillBots(gm.Client)
 	case SPMsgStart:
@@ -154,9 +173,20 @@ func (h *SPHub) handleJoinGame(client *SPClient, msg SPMessage) {
 	var payload SPJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
 
+	// 이미 시작된 사설 방의 코드로 들어오면 에러 대신 관전자로 입장시킨다
+	if gameID, ok := h.activeCodes[normalizeRoomCode(payload.Room)]; ok {
+		h.addSpectator(h.rooms[gameID], client, payload.Name)
+		return
+	}
+
 	room := h.lobbyRoomFor(payload.Room)
 	seat, err := room.Game.AddPlayer(payload.Name)
 	if err != nil {
+		// 사설 방이 가득 차 못 앉는 경우도 관전 진입 (공용 로비는 기존 에러)
+		if room.Code != "" {
+			h.addSpectator(room, client, payload.Name)
+			return
+		}
 		h.sendError(client, err.Error())
 		return
 	}
@@ -206,7 +236,11 @@ func (h *SPHub) lobbyRoomFor(roomField string) *spRoom {
 		return h.lobby
 	}
 	if code == roomCodeNew {
-		code = generateRoomCode(h.rng, takenCodes(h.privateLobbies))
+		taken := takenCodes(h.privateLobbies)
+		for c := range h.activeCodes { // 진행 중 방의 코드도 재사용 금지
+			taken[c] = true
+		}
+		code = generateRoomCode(h.rng, taken)
 	}
 	room := h.privateLobbies[code]
 	if room == nil {
@@ -217,6 +251,67 @@ func (h *SPHub) lobbyRoomFor(roomField string) *spRoom {
 		log.Printf("[SP] Created private room %s (code=%s)", game.ID, code)
 	}
 	return room
+}
+
+// ==================== 관전 / 리액션 ====================
+
+// addSpectator 진행 중(또는 가득 찬) 사설 방에 관전자로 등록한다.
+// 좌석·세션 없음 — 재접속 미지원, 끊기면 다시 코드로 들어온다.
+func (h *SPHub) addSpectator(room *spRoom, client *SPClient, name string) {
+	if len(room.Spectators) >= maxSpectators {
+		h.sendError(client, spectatorFullMsg)
+		return
+	}
+	if room.Spectators == nil {
+		room.Spectators = map[*SPClient]bool{}
+	}
+	client.Name = name
+	client.GameID = room.Game.ID
+	room.Spectators[client] = true
+
+	log.Printf("[스파이폴][관전] game=%s | %s 관전 입장 (%d명)",
+		room.Game.ID, displayName(name), len(room.Spectators))
+
+	h.sendToClient(client, SPMessage{
+		Type:    SPMsgSpectateJoined,
+		Payload: map[string]interface{}{"gameId": room.Game.ID, "roomCode": room.Code},
+	})
+	// 전원(관전자 포함)에게 관전자 수가 반영된 스냅샷 — 신규 관전자의 첫 스냅샷 겸용
+	h.broadcastState(room)
+}
+
+// isSpectator 관전자 연결인지 (좌석 보유자·미입장 연결은 false)
+func (h *SPHub) isSpectator(client *SPClient) bool {
+	if client.GameID == "" {
+		return false
+	}
+	room := h.rooms[client.GameID]
+	return room != nil && room.Spectators[client]
+}
+
+// handleReact 리액션 이모지 — 좌석 보유자만, waiting 중에도 허용.
+// 화이트리스트 외·레이트리밋 초과는 조용히 무시한다 (상태 저장 없음).
+func (h *SPHub) handleReact(client *SPClient, msg SPMessage) {
+	room := h.rooms[client.GameID]
+	if room == nil || client.Seat < 0 {
+		h.sendError(client, "게임을 찾을 수 없습니다")
+		return
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	var payload SPReactPayload
+	json.Unmarshal(payloadBytes, &payload)
+
+	if !reactAllowed(payload.Emoji) {
+		return
+	}
+	if room.LastReact == nil {
+		room.LastReact = map[int]time.Time{}
+	}
+	if !reactPass(room.LastReact, client.Seat, time.Now()) {
+		return
+	}
+	seat := client.Seat
+	h.broadcastEvent(room, SPEventPayload{Kind: "react", Seat: &seat, Name: client.Name, Message: payload.Emoji})
 }
 
 // waitingRoomOf 클라이언트가 속한 시작 전 방 (공용 로비 또는 사설 방)
@@ -374,7 +469,9 @@ func (h *SPHub) startGame(room *spRoom) {
 		return
 	}
 	if room.Code != "" {
-		delete(h.privateLobbies, room.Code) // 시작한 사설 방은 코드 장부에서 뗀다
+		// 시작한 사설 방의 코드는 진행 중 장부로 옮긴다 (관전 입장 근거)
+		delete(h.privateLobbies, room.Code)
+		h.activeCodes[room.Code] = room.Game.ID
 	} else {
 		h.lobby = nil // 시작한 방은 로비에서 떼어낸다
 		lobbySetWaiting("spyfall", false)
@@ -580,7 +677,8 @@ func (h *SPHub) buildSPState(room *spRoom, viewerSeat int) SPGameStatePayload {
 	var locations []string
 	if game.Ready {
 		locations = game.Words()
-		if !isSpy {
+		// 관전자(viewerSeat -1)에게는 장소를 주지 않는다 — 공개 정보만
+		if !isSpy && viewerSeat >= 0 {
 			location = game.Location
 		}
 	}
@@ -609,12 +707,14 @@ func (h *SPHub) buildSPState(room *spRoom, viewerSeat int) SPGameStatePayload {
 		IsSpy:          isSpy,
 		Location:       location,
 		Players:        h.spPlayerViews(room),
+		Spectators:     len(room.Spectators),
 		Votes:          votes,
 		Result:         game.Result,
 	}
 }
 
-// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다
+// broadcastState 좌석마다 개인화 스냅샷을 만들어 보낸다.
+// 관전자에게는 공개 정보만 담긴 스냅샷(viewerSeat -1)이 간다.
 func (h *SPHub) broadcastState(room *spRoom) {
 	for seat, c := range room.Clients {
 		if c == nil {
@@ -624,6 +724,12 @@ func (h *SPHub) broadcastState(room *spRoom) {
 			Type:    SPMsgGameState,
 			Payload: h.buildSPState(room, seat),
 		})
+	}
+	if len(room.Spectators) > 0 {
+		msg := SPMessage{Type: SPMsgGameState, Payload: h.buildSPState(room, -1)}
+		for c := range room.Spectators {
+			h.sendToClient(c, msg)
+		}
 	}
 }
 
@@ -688,11 +794,20 @@ func (h *SPHub) finishGame(room *spRoom) {
 
 	h.clearGameSessions(room)
 	delete(h.rooms, game.ID)
+	if room.Code != "" {
+		delete(h.activeCodes, room.Code) // 코드 재사용 복귀
+	}
 }
 
 // ==================== 재접속 / 연결 끊김 / 봇 대체 ====================
 
 func (h *SPHub) handleDisconnect(client *SPClient) {
+	// 관전자 연결 종료 — 세션·유예 없이 목록에서만 뗀다
+	if room := h.rooms[client.GameID]; room != nil && room.Spectators[client] {
+		delete(room.Spectators, client)
+		h.broadcastState(room) // 관전자 수 갱신
+		return
+	}
 	// 게임 참가 전에 끊긴 연결
 	if client.SessionID == "" {
 		return
@@ -831,5 +946,8 @@ func (h *SPHub) broadcastToRoom(room *spRoom, message SPMessage) {
 		if c != nil {
 			h.sendToClient(c, message)
 		}
+	}
+	for c := range room.Spectators { // 이벤트·종료 발표는 관전자에게도 간다
+		h.sendToClient(c, message)
 	}
 }
