@@ -24,6 +24,7 @@ func main() {
 	mtHub := server.NewMTHub()
 	sfHub := server.NewSFHub()
 	spHub := server.NewSPHub()
+	avHub := server.NewAVHub()
 
 	endpoints := []struct {
 		name    string
@@ -59,6 +60,8 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeSFWs(sfHub, w, r) }},
 		{"Spyfall", "/ws/spyfall", spHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeSPWs(spHub, w, r) }},
+		{"Avalon", "/ws/avalon", avHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeAVWs(avHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
