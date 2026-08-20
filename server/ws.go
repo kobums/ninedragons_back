@@ -150,6 +150,20 @@ func sendTo[M any](c *wsClient, message M, logPrefix string) {
 	select {
 	case c.Send <- data:
 	default:
+		if c.Bot {
+			// 봇은 소켓이 없어 "죽은 연결"이 아니다 — 닫으면 두뇌가 영구
+			// 침묵한다. 가장 오래된 메시지를 버리고 최신 상태를 넣는다
+			// (봇 두뇌는 최신 스냅샷만 있으면 된다).
+			select {
+			case <-c.Send:
+			default:
+			}
+			select {
+			case c.Send <- data:
+			default:
+			}
+			return
+		}
 		// 버퍼가 가득 찬 연결은 죽은 것으로 간주하고 닫는다
 		// (이후 readLoop 종료 → unregister 경로에서 세션 정리가 이어진다)
 		c.Connected = false
