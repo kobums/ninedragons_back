@@ -124,6 +124,8 @@ func (h *DVHub) handleGameMessage(gm DVGameMessage) {
 		h.handleLeaveLobby(gm.Client)
 	case DVMsgStartGame:
 		h.handleStartGame(gm.Client)
+	case DVMsgFillBots:
+		h.handleFillBots(gm.Client)
 	case DVMsgRejoinGame:
 		h.handleRejoin(gm.Client, gm.Message)
 	case DVMsgPlaceJoker:
@@ -405,6 +407,39 @@ func (h *DVHub) handleStartGame(client *DVClient) {
 	h.startGame(room)
 }
 
+// handleFillBots host 가 빈 좌석 전부를 연습봇으로 채운다 → 정원(4)이 차며
+// handleJoinLobby 와 같은 자동 시작 경로를 탄다 (스폰은 join 을 거치지
+// 않으므로 명시 호출).
+func (h *DVHub) handleFillBots(client *DVClient) {
+	room := h.waitingRoomOf(client)
+	if room == nil {
+		h.sendError(client, "로비를 찾을 수 없습니다")
+		return
+	}
+	if client.Seat != h.hostSeat(room) {
+		h.sendError(client, "호스트만 봇을 채울 수 있습니다")
+		return
+	}
+
+	botNo := 0
+	for _, c := range room.Clients {
+		if c != nil && c.Bot {
+			botNo++
+		}
+	}
+	for len(room.Game.Players) < DVMaxPlayers {
+		botNo++
+		if !h.spawnDVBot(room, fmt.Sprintf("%s%d", botName, botNo)) {
+			break
+		}
+	}
+	h.broadcastLobby(room)
+
+	if len(room.Game.Players) == DVMaxPlayers {
+		h.startGame(room)
+	}
+}
+
 func (h *DVHub) startGame(room *dvRoom) {
 	if err := room.Game.Start(h.rng); err != nil {
 		return
@@ -423,7 +458,9 @@ func (h *DVHub) startGame(room *dvRoom) {
 	}
 	log.Printf("[다빈치][경기시작] game=%s | 인원=%d | 선공=seat%d | %v",
 		room.Game.ID, len(room.Game.Players), room.Game.CurrentSeat, names)
-	notify("다빈치코드 게임 시작", fmt.Sprintf("%d인전 시작", len(room.Game.Players)))
+	if !dvRoomHasBot(room) { // 연습봇전은 운영자 알림을 억제한다
+		notify("다빈치코드 게임 시작", fmt.Sprintf("%d인전 시작", len(room.Game.Players)))
+	}
 
 	first := room.Game.CurrentSeat
 	h.broadcastEvent(room, DVEventPayload{Kind: "game_started", Seat: &first})
@@ -770,6 +807,7 @@ func (h *DVHub) finishIfOver(room *dvRoom, reason string) {
 		Winner:   displayName(winnerName),
 		Reason:   reason,
 		Duration: matchSeconds(game.StartedAt),
+		Bot:      dvRoomHasBot(room),
 	})
 
 	h.clearGameSessions(room)
@@ -847,6 +885,23 @@ func (h *DVHub) handleGraceExpired(sessionID string) {
 	h.broadcastEvent(room, DVEventPayload{Kind: "player_forfeited", Seat: &seat})
 	h.broadcastState(room)
 	h.finishIfOver(room, "forfeit_win")
+
+	// 사람이 아무도 남지 않았으면(전원 몰수) 봇끼리 게임을 이어갈 이유가
+	// 없다 — 봇 러너를 끝내고 방을 정리한다
+	if room.Game.Phase != DVPhaseGameOver && !h.dvHumanRemains(room) {
+		log.Printf("[다빈치][방정리] game=%s | 사람 전원 이탈 → 봇 게임 중단", room.Game.ID)
+		for _, c := range room.Clients {
+			if c == nil {
+				continue
+			}
+			h.sendToClient(c, DVMessage{Type: DVMsgSessionExpired})
+			h.drop(c.SessionID)
+		}
+		delete(h.rooms, room.Game.ID)
+		if room.Code != "" {
+			delete(h.activeCodes, room.Code) // 코드 재사용 복귀
+		}
+	}
 }
 
 // handleRejoin 세션 ID로 기존 게임에 재접속

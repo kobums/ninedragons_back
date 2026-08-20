@@ -9,34 +9,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// dvBotState 봇이 상태 스냅샷에서 꺼내 쓰는 최소 정보
-type dvBotState struct {
-	YourSeat          int    `json:"yourSeat"`
-	Phase             string `json:"phase"`
-	CurrentSeat       int    `json:"currentSeat"`
-	DeckBlackCount    int    `json:"deckBlackCount"`
-	DeckWhiteCount    int    `json:"deckWhiteCount"`
-	YourPendingJokers []struct {
-		ID int `json:"id"`
-	} `json:"yourPendingJokers"`
-	DrawnTile *struct {
-		ID int `json:"id"`
-	} `json:"drawnTile"`
-	Players []struct {
-		Seat             int  `json:"seat"`
-		Eliminated       bool `json:"eliminated"`
-		InitialRemaining int  `json:"initialRemaining"`
-		Tiles            []struct {
-			Revealed bool `json:"revealed"`
-		} `json:"tiles"`
-	} `json:"players"`
-}
-
-// dvBot 상태 스냅샷에 반응해 규칙에 맞는 아무 수나 두는 봇.
+// dvBot 상태 스냅샷에 반응해 규칙에 맞는 아무 수나 두는 프로토콜 드라이버.
+// 판단은 서버 연습봇과 같은 dvBrain(dv_bot.go)을 그대로 쓴다 — 드라이버는
+// 그 위의 WS 껍데기일 뿐이다.
 type dvBot struct {
-	conn         *websocket.Conn
-	guessCounter int
-	done         chan<- int
+	conn  *websocket.Conn
+	brain *dvBrain
+	done  chan<- int
 }
 
 func (b *dvBot) send(msg DVMessage) {
@@ -45,85 +24,8 @@ func (b *dvBot) send(msg DVMessage) {
 }
 
 func (b *dvBot) handleState(state dvBotState) {
-	me := state.YourSeat
-
-	// 시작 타일 가져오기는 턴과 무관하게 처리한다
-	if state.Phase == string(DVPhaseInitialDraw) {
-		for _, p := range state.Players {
-			if p.Seat == me && p.InitialRemaining > 0 {
-				color := DVBlack
-				if state.DeckBlackCount == 0 {
-					color = DVWhite
-				}
-				b.send(DVMessage{Type: DVMsgTakeInitial, Payload: DVTakeInitialPayload{Color: color}})
-			}
-		}
-		return
-	}
-
-	// 초기 조커 배치는 턴과 무관하게 처리한다
-	if state.Phase == string(DVPhaseJokerSetup) {
-		if len(state.YourPendingJokers) > 0 {
-			b.send(DVMessage{Type: DVMsgPlaceJoker, Payload: DVPlaceJokerPayload{
-				TileID: state.YourPendingJokers[0].ID, Position: 0,
-			}})
-		}
-		return
-	}
-
-	if state.CurrentSeat != me {
-		return
-	}
-
-	switch state.Phase {
-	case string(DVPhaseDraw):
-		color := DVBlack
-		if state.DeckBlackCount == 0 {
-			color = DVWhite
-		}
-		b.send(DVMessage{Type: DVMsgDrawTile, Payload: DVDrawTilePayload{Color: color}})
-
-	case string(DVPhaseGuess):
-		// 첫 번째 상대의 첫 비공개 타일을 -1~11 순환 값으로 추리
-	guessLoop:
-		for _, p := range state.Players {
-			if p.Seat == me || p.Eliminated {
-				continue
-			}
-			for idx, tile := range p.Tiles {
-				if !tile.Revealed {
-					value := (b.guessCounter % 13) - 1
-					b.guessCounter++
-					b.send(DVMessage{Type: DVMsgGuess, Payload: DVGuessPayload{
-						TargetSeat: p.Seat, TileIndex: idx, Value: value,
-					}})
-					break guessLoop
-				}
-			}
-		}
-
-	case string(DVPhaseContinueChoice):
-		b.send(DVMessage{Type: DVMsgContinueChoice, Payload: DVContinueChoicePayload{Continue: false}})
-
-	case string(DVPhasePlaceDrawnJoker):
-		if state.DrawnTile != nil {
-			b.send(DVMessage{Type: DVMsgPlaceJoker, Payload: DVPlaceJokerPayload{
-				TileID: state.DrawnTile.ID, Position: 0,
-			}})
-		}
-
-	case string(DVPhaseRevealOwn):
-		for _, p := range state.Players {
-			if p.Seat != me {
-				continue
-			}
-			for idx, tile := range p.Tiles {
-				if !tile.Revealed {
-					b.send(DVMessage{Type: DVMsgRevealOwn, Payload: DVRevealOwnPayload{TileIndex: idx}})
-					break
-				}
-			}
-		}
+	if reply := b.brain.decideState(state); reply != nil {
+		b.send(*reply)
 	}
 }
 
@@ -191,7 +93,7 @@ func TestDVBotsCompleteGame(t *testing.T) {
 
 	done := make(chan int, 3)
 	for i, c := range clients {
-		bot := &dvBot{conn: c.conn, done: done}
+		bot := &dvBot{conn: c.conn, brain: newDVBrain(), done: done}
 		go bot.run(states[i])
 	}
 

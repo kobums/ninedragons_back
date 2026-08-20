@@ -51,6 +51,7 @@ const (
 	DVMsgContinueChoice DVMessageType = "dv_continue_choice"
 	DVMsgRevealOwn      DVMessageType = "dv_reveal_own"
 	DVMsgReact          DVMessageType = "dv_react"
+	DVMsgFillBots       DVMessageType = "dv_fill_bots"
 
 	// 서버 → 클라이언트
 	DVMsgLobbyState         DVMessageType = "dv_lobby_state"
