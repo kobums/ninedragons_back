@@ -25,6 +25,11 @@ func main() {
 	sfHub := server.NewSFHub()
 	spHub := server.NewSPHub()
 	avHub := server.NewAVHub()
+	lvHub := server.NewLVHub()
+	omHub := server.NewOMHub()
+	skHub := server.NewSKHub()
+	cnHub := server.NewCNHub()
+	ytHub := server.NewYTHub()
 
 	endpoints := []struct {
 		name    string
@@ -62,6 +67,16 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeSPWs(spHub, w, r) }},
 		{"Avalon", "/ws/avalon", avHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeAVWs(avHub, w, r) }},
+		{"Love Letter", "/ws/loveletter", lvHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeLVWs(lvHub, w, r) }},
+		{"Omok", "/ws/omok", omHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeOMWs(omHub, w, r) }},
+		{"Skull", "/ws/skull", skHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeSKWs(skHub, w, r) }},
+		{"Codenames", "/ws/codenames", cnHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeCNWs(cnHub, w, r) }},
+		{"Yacht Dice", "/ws/yacht", ytHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeYTWs(ytHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
