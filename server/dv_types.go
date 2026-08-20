@@ -239,9 +239,9 @@ type DVGameStatePayload struct {
 type DVEventPayload struct {
 	Kind string `json:"kind"`
 	// guess_made
-	GuesserSeat  int   `json:"guesserSeat,omitempty"`
-	TargetSeat   int   `json:"targetSeat,omitempty"`
-	TileIndex    int   `json:"tileIndex,omitempty"`
+	GuesserSeat  int   `json:"guesserSeat"`
+	TargetSeat   int   `json:"targetSeat"`
+	TileIndex    int   `json:"tileIndex"`
 	GuessedValue *int  `json:"guessedValue,omitempty"`
 	Correct      *bool `json:"correct,omitempty"`
 	// game_started / tile_drawn / joker_placed / turn_stopped /

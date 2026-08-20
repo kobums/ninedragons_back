@@ -73,7 +73,7 @@ func (g *NCGame) Start() {
 func (g *NCGame) SubmitBlocks(team TeamColor, block1, block2 int, useHidden bool, selectedBlockChoice int) error {
 	// 이번 라운드에 이미 제출한 팀은 다시 제출할 수 없다
 	if g.RoundSubmits[team] != nil {
-		return fmt.Errorf("already submitted this round")
+		return fmt.Errorf("이미 이번 라운드에 제출했습니다")
 	}
 
 	// 유효성 검사 (같은 숫자 두 개를 내려면 실제로 두 개를 보유해야 한다)
