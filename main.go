@@ -39,6 +39,7 @@ func main() {
 	crHub := server.NewCRHub()
 	idHub := server.NewIDHub()
 	dmHub := server.NewDMHub()
+	krHub := server.NewKRHub()
 
 	endpoints := []struct {
 		name    string
@@ -104,6 +105,8 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeIDWs(idHub, w, r) }},
 		{"Dalmuti", "/ws/dalmuti", dmHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeDMWs(dmHub, w, r) }},
+		{"No Touch Kraken", "/ws/kraken", krHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeKRWs(krHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
