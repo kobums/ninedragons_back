@@ -37,6 +37,8 @@ func main() {
 	nmHub := server.NewNMHub()
 	ccHub := server.NewCCHub()
 	crHub := server.NewCRHub()
+	idHub := server.NewIDHub()
+	dmHub := server.NewDMHub()
 
 	endpoints := []struct {
 		name    string
@@ -98,6 +100,10 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeCCWs(ccHub, w, r) }},
 		{"Cockroach Poker", "/ws/cockroach", crHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeCRWs(crHub, w, r) }},
+		{"Insider", "/ws/insider", idHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeIDWs(idHub, w, r) }},
+		{"Dalmuti", "/ws/dalmuti", dmHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeDMWs(dmHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
