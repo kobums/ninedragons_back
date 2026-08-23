@@ -46,6 +46,8 @@ func main() {
 	seHub := server.NewSEHub()
 	ekHub := server.NewEKHub()
 	miHub := server.NewMIHub()
+	rfHub := server.NewRFHub()
+	sbHub := server.NewSBHub()
 
 	endpoints := []struct {
 		name    string
@@ -125,6 +127,10 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeEKWs(ekHub, w, r) }},
 		{"The Mind", "/ws/mind", miHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeMIWs(miHub, w, r) }},
+		{"Coup Reformation", "/ws/reformation", rfHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeRFWs(rfHub, w, r) }},
+		{"Saboteur", "/ws/saboteur", sbHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeSBWs(sbHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
