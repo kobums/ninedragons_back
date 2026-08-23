@@ -77,6 +77,12 @@ func (b *stBot) handle(msg STMessage) {
 
 // run raw conn 으로 game_over 까지 진행한다. 종료 후에는 testConn 큐로 읽는다.
 func (b *stBot) run(initial map[string]interface{}) {
+	// 읽기를 놓을 때 반드시 알린다. 예전에는 game_over 를 본 경우에만
+	// 알려서, 호출부가 한 명만 기다리고 잠깐 자는 사이 아직 소켓을 읽던
+	// 드라이버와 본 고루틴이 같은 연결을 동시에 읽어 레이스가 났다.
+	winner := ""
+	defer func() { b.done <- winner }()
+
 	if initial != nil {
 		b.handle(STMessage{Type: STMsgGameState, Payload: initial})
 	}
@@ -103,7 +109,7 @@ func (b *stBot) run(initial map[string]interface{}) {
 					Winner string `json:"winner"`
 				}
 				json.Unmarshal(raw, &over)
-				b.done <- over.Winner
+				winner = over.Winner
 				return
 			}
 			b.handle(msg)
@@ -138,13 +144,16 @@ func stPlayToGameOver(t *testing.T, clients []*stTestClient, states []map[string
 		bot := &stBot{conn: c.conn, done: done}
 		go bot.run(states[i])
 	}
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("사람전 완주 실패")
+	// 드라이버가 전부 소켓 읽기를 놓은 뒤에야 testConn 큐로 되돌린다.
+	// 예전에는 한 명만 기다리고 100ms 자고 넘어가 레이스가 났다.
+	timeout := time.After(20 * time.Second)
+	for range clients {
+		select {
+		case <-done:
+		case <-timeout:
+			t.Fatal("사람전 완주 실패")
+		}
 	}
-	// 두 드라이버 모두 game_over 를 읽고 종료할 때까지 잠깐 대기
-	time.Sleep(100 * time.Millisecond)
 }
 
 // TestSTRematchOfferHumans 사람전 재대결: 한쪽 신청 → 상대 제안 수신 → 수락 시 재시작

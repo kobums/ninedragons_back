@@ -163,13 +163,21 @@ func TestQDBotsCompleteGame(t *testing.T) {
 		go bot.run(states[i])
 	}
 
-	select {
-	case winner := <-done:
-		if winner != string(QDSouth) && winner != string(QDNorth) {
-			t.Fatalf("winner = %q", winner)
+	// 드라이버는 읽기를 놓을 때마다 알린다 — 승자를 본 쪽의 신호를 찾는다
+	timeout := time.After(20 * time.Second)
+	winner := ""
+	for range clients {
+		select {
+		case w := <-done:
+			if w != "" {
+				winner = w
+			}
+		case <-timeout:
+			t.Fatal("20초 안에 게임이 끝나지 않았다 — 진행 불가 상태")
 		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("20초 안에 게임이 끝나지 않았다 — 진행 불가 상태")
+	}
+	if winner != string(QDSouth) && winner != string(QDNorth) {
+		t.Fatalf("winner = %q", winner)
 	}
 }
 
@@ -192,6 +200,12 @@ func (b *qdBot) handle(msg QDMessage) {
 }
 
 func (b *qdBot) run(initial map[string]interface{}) {
+	// 읽기를 놓을 때 반드시 알린다. 예전에는 game_over 를 본 경우에만
+	// 알려서, 호출부가 한 명만 기다리고 잠깐 자는 사이 아직 소켓을 읽던
+	// 드라이버와 본 고루틴이 같은 연결을 동시에 읽어 레이스가 났다.
+	winner := ""
+	defer func() { b.done <- winner }()
+
 	if initial != nil {
 		b.handle(QDMessage{Type: QDMsgGameState, Payload: initial})
 	}
@@ -218,7 +232,7 @@ func (b *qdBot) run(initial map[string]interface{}) {
 					Winner string `json:"winner"`
 				}
 				json.Unmarshal(raw, &over)
-				b.done <- over.Winner
+				winner = over.Winner
 				return
 			}
 			b.handle(msg)

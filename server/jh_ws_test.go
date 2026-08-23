@@ -179,6 +179,12 @@ func (b *jhWsBot) pickIndices(state jhBotState, n int, needPotion bool) []int {
 // run 초기 스냅샷을 먼저 처리하고, 이후 서버 메시지에 반응한다.
 // 게임이 끝나면 done 에 승자 역할을 보낸다.
 func (b *jhWsBot) run(initial map[string]interface{}) {
+	// 읽기를 놓을 때 반드시 알린다. 예전에는 game_over 를 본 경우에만
+	// 알려서, 호출부가 한 명만 기다리고 잠깐 자는 사이 아직 소켓을 읽던
+	// 드라이버와 본 고루틴이 같은 연결을 동시에 읽어 레이스가 났다.
+	winner := ""
+	defer func() { b.done <- winner }()
+
 	if initial != nil {
 		raw, _ := json.Marshal(initial)
 		var state jhBotState
@@ -211,7 +217,7 @@ func (b *jhWsBot) run(initial map[string]interface{}) {
 					Winner string `json:"winner"`
 				}
 				json.Unmarshal(raw, &over)
-				b.done <- over.Winner
+				winner = over.Winner
 				return
 
 			case JHMsgGameState:
@@ -244,13 +250,21 @@ func TestJHBotsCompleteGame(t *testing.T) {
 		go bot.run(states[i])
 	}
 
-	select {
-	case winner := <-done:
-		if winner != string(JHJekyll) && winner != string(JHHyde) {
-			t.Fatalf("winner = %q, want jekyll or hyde", winner)
+	// 드라이버는 읽기를 놓을 때마다 알린다 — 승자를 본 쪽의 신호를 찾는다
+	timeout := time.After(15 * time.Second)
+	winner := ""
+	for range clients {
+		select {
+		case w := <-done:
+			if w != "" {
+				winner = w
+			}
+		case <-timeout:
+			t.Fatal("15초 안에 게임이 끝나지 않았다 — 상태머신 어딘가에서 멈춤")
 		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("15초 안에 게임이 끝나지 않았다 — 상태머신 어딘가에서 멈춤")
+	}
+	if winner != string(JHJekyll) && winner != string(JHHyde) {
+		t.Fatalf("winner = %q, want jekyll or hyde", winner)
 	}
 }
 

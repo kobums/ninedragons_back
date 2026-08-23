@@ -32,8 +32,6 @@ func TestJHRematchOfferHumans(t *testing.T) {
 			t.Fatal("사람전 완주 실패")
 		}
 	}
-	// 두 드라이버 모두 game_over 를 읽고 종료할 때까지 잠깐 대기
-	time.Sleep(100 * time.Millisecond)
 
 	clients[0].send(t, JHMessage{Type: JHMsgRematch})
 	clients[1].waitFor(t, JHMsgRematchOffer)
