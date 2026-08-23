@@ -30,6 +30,11 @@ const (
 	// CWDefaultMaxMission 기본 임무 단계 수 (1임무 → … → 5임무를 마치면 클리어)
 	CWDefaultMaxMission = 5
 
+	// CWSelfTaskMinRank 카드를 쥔 사람에게 그 카드의 임무를 맡길 수 있는
+	// 최소 숫자. 이보다 낮으면 그 카드로 직접 트릭을 이겨야 해서 사실상
+	// 불가능하므로 카드를 쥐지 않은 좌석에 배정한다 (cwPickTasks 주석 참고).
+	CWSelfTaskMinRank = 8
+
 	// 덱 구성 — 색 1~9 네 벌 + 로켓 1~4
 	CWColorMaxRank  = 9
 	CWRocketMaxRank = 4

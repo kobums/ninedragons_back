@@ -159,7 +159,11 @@ func TestCWDeckAndDeal(t *testing.T) {
 
 	// 임무 단계가 오르면 임무 카드도 늘고 좌석에 골고루 배정된다
 	rng := rand.New(rand.NewSource(3))
-	tasks := cwPickTasks(rng, 5, 4)
+	empty := []*CWPlayer{
+		{Seat: 0, Hand: []CWCard{}}, {Seat: 1, Hand: []CWCard{}},
+		{Seat: 2, Hand: []CWCard{}}, {Seat: 3, Hand: []CWCard{}},
+	}
+	tasks := cwPickTasks(rng, 5, empty)
 	if len(tasks) != 5 {
 		t.Fatalf("임무 %d개, want 5", len(tasks))
 	}
@@ -169,6 +173,38 @@ func TestCWDeckAndDeal(t *testing.T) {
 	}
 	if len(seats) != 4 {
 		t.Fatalf("임무 5개가 좌석 %d곳에만 배정됐다", len(seats))
+	}
+}
+
+// TestCWTaskNotSelfHeldLowCard 낮은 임무 카드는 그 카드를 쥔 사람에게 맡기지
+// 않는다 — 자기가 낸 카드로 그 트릭을 이겨야 해서 사실상 불가능하기 때문이다.
+func TestCWTaskNotSelfHeldLowCard(t *testing.T) {
+	for seed := int64(0); seed < 200; seed++ {
+		g := NewCWGame("t")
+		for i := 0; i < 4; i++ {
+			if _, err := g.AddPlayer(fmt.Sprintf("P%d", i)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rng := rand.New(rand.NewSource(seed))
+		if err := g.Start(rng); err != nil {
+			t.Fatal(err)
+		}
+		for mission := 1; mission <= g.MaxMission; mission++ {
+			for _, task := range g.Tasks {
+				if task.Rank >= CWSelfTaskMinRank {
+					continue
+				}
+				for _, c := range g.Players[task.Seat].Hand {
+					if c.Suit == task.Suit && c.Rank == task.Rank {
+						t.Fatalf("seed%d %d임무: 낮은 임무 %v%d 가 소지자 seat%d 에게 배정됐다",
+							seed, mission, task.Suit, task.Rank, task.Seat)
+					}
+				}
+			}
+			g.Mission = mission
+			g.dealMission(rng)
+		}
 	}
 }
 

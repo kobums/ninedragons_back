@@ -227,7 +227,7 @@ func (g *CWGame) dealMission(rng *rand.Rand) {
 		}
 	}
 
-	g.Tasks = cwPickTasks(rng, g.Mission, n)
+	g.Tasks = cwPickTasks(rng, g.Mission, g.Players)
 	g.LastTrick = nil
 	g.Leader = g.CommanderSeat
 	g.beginTrick()
@@ -235,14 +235,28 @@ func (g *CWGame) dealMission(rng *rand.Rand) {
 
 // cwPickTasks 색 숫자 카드 중 count 장을 뽑아 좌석에 배정한다.
 // 좌석은 섞은 순서로 돌아가며 배정해 한 사람에게 몰리지 않게 한다.
-func cwPickTasks(rng *rand.Rand, count, seats int) []CWTask {
+//
+// **손패를 보고 배정한다.** 담당자가 그 카드를 직접 쥐고 있으면 그 카드로
+// 직접 트릭을 이겨야 하는데, 낮은 숫자면 사실상 불가능하다(자기가 낸 카드가
+// 그 트릭의 최강이어야 하므로). 원작은 플레이어가 할 만한 임무를 골라
+// 가져가서 이런 조합이 안 생기지만, 여기서는 무작위 배정이라 같은 장치를
+// 규칙으로 넣었다 — 카드 소지자에게는 높은 숫자(CWSelfTaskMinRank 이상)일
+// 때만 배정하고, 그 외에는 카드를 쥐지 않은 좌석에 맡긴다.
+func cwPickTasks(rng *rand.Rand, count int, players []*CWPlayer) []CWTask {
 	pool := cwColorDeck()
 	rng.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
 	if count > len(pool) {
 		count = len(pool)
 	}
 
-	order := make([]int, seats)
+	holderOf := map[CWCard]int{}
+	for _, p := range players {
+		for _, c := range p.Hand {
+			holderOf[c] = p.Seat
+		}
+	}
+
+	order := make([]int, len(players))
 	for i := range order {
 		order[i] = i
 	}
@@ -250,11 +264,18 @@ func cwPickTasks(rng *rand.Rand, count, seats int) []CWTask {
 
 	tasks := make([]CWTask, 0, count)
 	for i := 0; i < count; i++ {
-		tasks = append(tasks, CWTask{
-			Suit: pool[i].Suit,
-			Rank: pool[i].Rank,
-			Seat: order[i%len(order)],
-		})
+		card := pool[i]
+		holder, dealt := holderOf[card]
+		start := i % len(order)
+		seat := order[start]
+		for k := 0; k < len(order); k++ {
+			cand := order[(start+k)%len(order)]
+			if !dealt || cand != holder || card.Rank >= CWSelfTaskMinRank {
+				seat = cand
+				break
+			}
+		}
+		tasks = append(tasks, CWTask{Suit: card.Suit, Rank: card.Rank, Seat: seat})
 	}
 	return tasks
 }
