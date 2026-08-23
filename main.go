@@ -42,6 +42,8 @@ func main() {
 	krHub := server.NewKRHub()
 	kgHub := server.NewKGHub()
 	cwHub := server.NewCWHub()
+	joHub := server.NewJOHub()
+	seHub := server.NewSEHub()
 
 	endpoints := []struct {
 		name    string
@@ -113,6 +115,10 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeKGWs(kgHub, w, r) }},
 		{"The Crew", "/ws/crew", cwHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeCWWs(cwHub, w, r) }},
+		{"Just One", "/ws/justone", joHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeJOWs(joHub, w, r) }},
+		{"Set", "/ws/set", seHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeSEWs(seHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
