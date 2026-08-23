@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -104,7 +105,10 @@ func isBotName(name string) bool {
 	return strings.HasPrefix(name, botName)
 }
 
-var stats *statsStore
+// stats 전역 기록소. 운영에서는 main 이 엔드포인트를 띄우기 전에 한 번만
+// 세팅하지만, 테스트는 허브 고루틴이 도는 중에 InitStats 를 다시 부른다.
+// 원자적 포인터로 두어 그 경우에도 경합이 없다.
+var stats atomic.Pointer[statsStore]
 
 // InitStats 기록 파일을 읽어 집계를 복원하고 기록 고루틴을 시작한다
 func InitStats(path string) {
@@ -120,7 +124,7 @@ func InitStats(path string) {
 	}
 	s.load()
 	go s.run()
-	stats = s
+	stats.Store(s)
 	log.Printf("[stats] 전적 기록 활성 (%s, 누적 %d판)", path, s.total)
 }
 
@@ -200,12 +204,13 @@ func (s *statsStore) run() {
 
 // RecordMatch 경기 결과 기록 (허브 고루틴에서 호출 — 논블로킹)
 func RecordMatch(rec MatchRecord) {
-	if stats == nil {
+	s := stats.Load()
+	if s == nil {
 		return
 	}
 	rec.PlayedAt = time.Now()
 	select {
-	case stats.ch <- rec:
+	case s.ch <- rec:
 	default:
 		log.Printf("[stats] 기록 버림 (큐 가득)")
 	}
@@ -342,18 +347,18 @@ func StatsHandler(w http.ResponseWriter, r *http.Request) {
 		// 비활성 상태에서도 쿼리가 오면 빈 상세로 답한다
 		resp.PlayerDetail = &statsPlayerDetail{Name: player, PerGame: []statsPlayerGame{}, Recent: []MatchRecord{}}
 	}
-	if stats != nil {
-		stats.mu.Lock()
-		resp.Total = stats.total
-		for game, count := range stats.perGame {
+	if s := stats.Load(); s != nil {
+		s.mu.Lock()
+		resp.Total = s.total
+		for game, count := range s.perGame {
 			resp.PerGame = append(resp.PerGame, statsGameCount{Game: game, Count: count})
 		}
-		resp.Recent = append(resp.Recent, stats.recent...)
-		resp.Players = stats.topPlayers(statsTopPlayers)
+		resp.Recent = append(resp.Recent, s.recent...)
+		resp.Players = s.topPlayers(statsTopPlayers)
 		if player != "" {
-			resp.PlayerDetail = stats.playerDetail(player)
+			resp.PlayerDetail = s.playerDetail(player)
 		}
-		stats.mu.Unlock()
+		s.mu.Unlock()
 		sort.Slice(resp.PerGame, func(i, j int) bool {
 			if resp.PerGame[i].Count != resp.PerGame[j].Count {
 				return resp.PerGame[i].Count > resp.PerGame[j].Count

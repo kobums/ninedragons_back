@@ -15,9 +15,9 @@ func statsWait(t *testing.T, want int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		stats.mu.Lock()
-		total := stats.total
-		stats.mu.Unlock()
+		stats.Load().mu.Lock()
+		total := stats.Load().total
+		stats.Load().mu.Unlock()
 		if total == want {
 			return
 		}
@@ -31,7 +31,7 @@ func TestStatsRecordAndRestore(t *testing.T) {
 	path := filepath.Join(dir, "sub", "matches.jsonl")
 
 	InitStats(path)
-	defer func() { stats = nil }()
+	defer func() { stats.Store(nil) }()
 
 	RecordMatch(MatchRecord{Game: "quoridor", Players: "가 vs 나", Winner: "가", Reason: "reach_goal", Duration: 42})
 	RecordMatch(MatchRecord{Game: "quoridor", Players: "가 vs 나", Winner: "나", Reason: "reach_goal", Duration: 30, Bot: true})
@@ -63,9 +63,9 @@ func TestStatsRecordAndRestore(t *testing.T) {
 
 	// 재시작 복원: 새 스토어가 파일에서 집계를 되살린다
 	InitStats(path)
-	stats.mu.Lock()
-	restored := stats.total
-	stats.mu.Unlock()
+	stats.Load().mu.Lock()
+	restored := stats.Load().total
+	stats.Load().mu.Unlock()
 	if restored != 3 {
 		t.Fatalf("복원 total = %d, want 3", restored)
 	}
@@ -84,7 +84,7 @@ func TestStatsRecordAndRestore(t *testing.T) {
 }
 
 func TestStatsDisabledSafe(t *testing.T) {
-	stats = nil
+	stats.Store(nil)
 	// 비활성 상태에서도 기록·조회가 안전해야 한다
 	RecordMatch(MatchRecord{Game: "quoridor"})
 	rec := httptest.NewRecorder()
@@ -114,11 +114,11 @@ func TestSplitPlayersFormats(t *testing.T) {
 		players string
 		want    []string
 	}{
-		{"가 vs 나", []string{"가", "나"}},                     // 1:1 (쿼리도 등)
-		{"가·나 vs 다·라", []string{"가", "나", "다", "라"}},       // 팀전 (티츄·마이티)
-		{"가 vs 나 vs 다", []string{"가", "나", "다"}},          // 다빈치 (전원 vs 연결)
+		{"가 vs 나", []string{"가", "나"}},                      // 1:1 (쿼리도 등)
+		{"가·나 vs 다·라", []string{"가", "나", "다", "라"}},        // 팀전 (티츄·마이티)
+		{"가 vs 나 vs 다", []string{"가", "나", "다"}},            // 다빈치 (전원 vs 연결)
 		{"가·나·다 vs 라·마", []string{"가", "나", "다", "라", "마"}}, // 진영전 (아발론·스파이폴·스카이폴)
-		{"가 vs 가", []string{"가"}},                          // 동명 중복 제거
+		{"가 vs 가", []string{"가"}},                           // 동명 중복 제거
 	}
 	for _, c := range cases {
 		got := splitPlayers(c.players)
@@ -157,7 +157,7 @@ func TestStatsPlayersAggregation(t *testing.T) {
 	path := filepath.Join(dir, "matches.jsonl")
 
 	InitStats(path)
-	defer func() { stats = nil }()
+	defer func() { stats.Store(nil) }()
 
 	RecordMatch(MatchRecord{Game: "quoridor", Players: "가 vs 나", Winner: "가", Reason: "reach_goal", Duration: 42})
 	RecordMatch(MatchRecord{Game: "tichu", Players: "가·나 vs 다·라", Winner: "가·나", Reason: "target", Duration: 300})
@@ -200,9 +200,9 @@ func TestStatsPlayersAggregation(t *testing.T) {
 
 	// 재시작 복원: 파일에서 플레이어 집계가 되살아난다
 	InitStats(path)
-	stats.mu.Lock()
-	restored := stats.perPlayer["가"]
-	stats.mu.Unlock()
+	stats.Load().mu.Lock()
+	restored := stats.Load().perPlayer["가"]
+	stats.Load().mu.Unlock()
 	if restored == nil || restored.Plays != 3 || restored.Wins != 2 || restored.Draws != 1 {
 		t.Fatalf("복원된 가 = %+v, want plays 3 wins 2 draws 1", restored)
 	}
@@ -214,7 +214,7 @@ func TestStatsPlayerQuery(t *testing.T) {
 	path := filepath.Join(dir, "matches.jsonl")
 
 	InitStats(path)
-	defer func() { stats = nil }()
+	defer func() { stats.Store(nil) }()
 
 	RecordMatch(MatchRecord{Game: "quoridor", Players: "가 vs 나", Winner: "가", Reason: "reach_goal", Duration: 42})
 	RecordMatch(MatchRecord{Game: "quoridor", Players: "가 vs 나", Winner: "나", Reason: "reach_goal", Duration: 30})
