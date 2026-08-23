@@ -90,8 +90,12 @@ func readLoop[M any](conn *websocket.Conn, logPrefix string, deliver func(M), un
 	}
 }
 
-// writeLoop 송신 펌프. 대기 중인 메시지들을 '\n' 으로 이어붙여 한 프레임에
-// 보낸다 — 프론트의 개행 분리 파싱이 이 동작에 의존한다.
+// writeLoop 송신 펌프. 메시지 하나당 WebSocket 프레임 하나로 보낸다.
+//
+// 예전에는 대기 중인 메시지를 '\n' 으로 이어붙여 한 프레임에 실었는데(gorilla
+// 예제 관행), 그러면 프레임을 그대로 JSON.parse 하는 평범한 클라이언트가
+// 깨진다. 지금은 표준대로 프레임을 나눠 보내고, 프론트의 개행 분리 파싱은
+// 이전 버전 백엔드와 섞일 때를 위한 방어로만 남겨 둔다.
 func writeLoop(conn *websocket.Conn, send chan []byte) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -108,20 +112,7 @@ func writeLoop(conn *websocket.Conn, send chan []byte) {
 				return
 			}
 
-			w, err := conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			// 대기 중인 메시지 추가
-			n := len(send)
-			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-send)
-			}
-
-			if err := w.Close(); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 
