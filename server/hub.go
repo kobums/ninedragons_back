@@ -297,6 +297,8 @@ func (h *Hub) handleJoinGame(client *Client, msg Message) {
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload JoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
+	// 초기 게임군은 playerName, 이후 게임군은 name — 양쪽 표기를 받는다
+	payload.PlayerName = resolveJoinName(payloadBytes, payload.PlayerName)
 
 	log.Printf("Player %s (%s) joining with color preference: %s", client.ID, payload.PlayerName, payload.Color)
 

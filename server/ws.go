@@ -90,6 +90,23 @@ func readLoop[M any](conn *websocket.Conn, logPrefix string, deliver func(M), un
 	}
 }
 
+// resolveJoinName 입장 페이로드의 이름을 확정한다.
+//
+// 초기 게임군(구룡투·넘버체인지·다빈치 등 9종)은 `playerName`, 이후 게임군은
+// `name` 으로 표기가 갈려 있었다. 프론트는 `name` 으로 통일했지만 캐시된 이전
+// 번들이 남아 있을 수 있어, 서버는 두 표기를 모두 받는다. playerName 이 이미
+// 채워져 있으면 그대로 쓰고, 비어 있을 때만 name 을 본다.
+func resolveJoinName(payloadBytes []byte, playerName string) string {
+	if playerName != "" {
+		return playerName
+	}
+	var alt struct {
+		Name string `json:"name"`
+	}
+	json.Unmarshal(payloadBytes, &alt)
+	return alt.Name
+}
+
 // writeLoop 송신 펌프. 메시지 하나당 WebSocket 프레임 하나로 보낸다.
 //
 // 예전에는 대기 중인 메시지를 '\n' 으로 이어붙여 한 프레임에 실었는데(gorilla

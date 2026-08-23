@@ -155,6 +155,8 @@ func (h *DVHub) handleJoinLobby(client *DVClient, msg DVMessage) {
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload DVJoinLobbyPayload
 	json.Unmarshal(payloadBytes, &payload)
+	// 초기 게임군은 playerName, 이후 게임군은 name — 양쪽 표기를 받는다
+	payload.PlayerName = resolveJoinName(payloadBytes, payload.PlayerName)
 
 	// 이미 시작된 사설 방의 코드로 들어오면 에러 대신 관전자로 입장시킨다
 	if gameID, ok := h.activeCodes[normalizeRoomCode(payload.Room)]; ok {

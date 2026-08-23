@@ -315,6 +315,8 @@ func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload NCJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
+	// 초기 게임군은 playerName, 이후 게임군은 name — 양쪽 표기를 받는다
+	payload.PlayerName = resolveJoinName(payloadBytes, payload.PlayerName)
 
 	log.Printf("[NC] Player %s (%s) joining with team preference: %s", client.ID, payload.PlayerName, payload.Team)
 

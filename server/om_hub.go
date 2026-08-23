@@ -117,6 +117,8 @@ func (h *OMHub) handleJoinGame(client *OMClient, msg OMMessage) {
 	payloadBytes, _ := json.Marshal(msg.Payload)
 	var payload OMJoinGamePayload
 	json.Unmarshal(payloadBytes, &payload)
+	// 초기 게임군은 playerName, 이후 게임군은 name — 양쪽 표기를 받는다
+	payload.PlayerName = resolveJoinName(payloadBytes, payload.PlayerName)
 
 	client.Name = payload.PlayerName
 	client.SessionID = uuid.New().String()
