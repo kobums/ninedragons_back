@@ -9,18 +9,18 @@ import (
 
 // ==================== 익스플로딩 키튼 순수 규칙 ====================
 //
-// 덱 구성·차례·카드 효과·아뇨 창·되꽂기·탈락만 다룬다. 클라이언트·타이머를
+// 덱 구성·차례·카드 효과·안돼 창·되꽂기·탈락만 다룬다. 클라이언트·타이머를
 // 모르며, 허브(ek_hub.go)가 마감을 걸고 이벤트 큐(DrainEvents/DrainPrivates)를
 // 방송한다.
 //
 // 진행 모델:
 //
 //	turn ──(카드 냄)──> nope_window ──(전원 통과 or 마감)──> 효과 판정
-//	                        ↑ 아뇨가 나오면 창을 다시 연다 (StateSeq++)
+//	                        ↑ 안돼가 나오면 창을 다시 연다 (StateSeq++)
 //	turn ──(뽑기)──> 폭탄이면 defuse_place, 해체 없으면 탈락
 //
-// 아뇨 겹침은 홀짝으로 판정한다 — NopeCount 가 짝수면 효과 발동, 홀수면 무효.
-// 아뇨 카드는 유한(5장)하므로 창은 반드시 닫힌다.
+// 안돼 겹침은 홀짝으로 판정한다 — NopeCount 가 짝수면 효과 발동, 홀수면 무효.
+// 안돼 카드는 유한(5장)하므로 창은 반드시 닫힌다.
 //
 // 종료 보장: 폭탄은 인원-1 장이고, 손에 들 수 없어 항상 덱 안에 있다
 // (되꽂기로 돌아가거나 탈락과 함께 사라진다). 남은 폭탄 수 = 생존자 수 - 1
@@ -131,7 +131,7 @@ func (g *EKGame) DrainEvents() []EKGameEvent {
 	return evs
 }
 
-// DrainPrivates 쌓인 개인 이벤트(미래 예측)를 꺼내고 비운다.
+// DrainPrivates 쌓인 개인 이벤트(미리보기)를 꺼내고 비운다.
 // 허브는 이걸 해당 좌석 한 명에게만 보낸다.
 func (g *EKGame) DrainPrivates() []EKPrivateEvent {
 	evs := g.privates
@@ -258,9 +258,9 @@ func (g *EKGame) finish() {
 	g.StateSeq++
 }
 
-// ==================== 카드 내기 / 아뇨 창 ====================
+// ==================== 카드 내기 / 안돼 창 ====================
 
-// Play 자기 차례에 기능 카드 한 장을 낸다 → 아뇨 창이 열린다.
+// Play 자기 차례에 기능 카드 한 장을 낸다 → 안돼 창이 열린다.
 func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	if g.Phase != EKPhaseTurn {
 		return errors.New("지금은 카드를 낼 수 없습니다")
@@ -280,7 +280,7 @@ func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	case card == EKCardDefuse:
 		return errors.New("해체는 폭탄을 뽑았을 때 자동으로 쓰입니다")
 	case card == EKCardNope:
-		return errors.New("아뇨는 다른 사람이 카드를 냈을 때만 낼 수 있습니다")
+		return errors.New("안돼는 다른 사람이 카드를 냈을 때만 낼 수 있습니다")
 	case ekIsCat(card):
 		return errors.New("고양이 카드는 같은 종류 2장을 함께 내야 합니다")
 	}
@@ -307,7 +307,7 @@ func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	return nil
 }
 
-// PlayPair 같은 종류 고양이 2장 → 대상 손패에서 무작위 1장 훔치기 (아뇨 대상)
+// PlayPair 같은 종류 고양이 2장 → 대상 손패에서 무작위 1장 훔치기 (안돼 대상)
 func (g *EKGame) PlayPair(seat int, indexes []int, targetSeat int, rng *rand.Rand) error {
 	if g.Phase != EKPhaseTurn {
 		return errors.New("지금은 카드를 낼 수 없습니다")
@@ -347,7 +347,7 @@ func (g *EKGame) PlayPair(seat int, indexes []int, targetSeat int, rng *rand.Ran
 	return nil
 }
 
-// openNopeWindow 아뇨 창을 연다. 응답자가 없으면(전원 탈락 등) 즉시 판정.
+// openNopeWindow 안돼 창을 연다. 응답자가 없으면(전원 탈락 등) 즉시 판정.
 func (g *EKGame) openNopeWindow(kind string, bySeat, targetSeat int, rng *rand.Rand) {
 	g.Pending = &EKPending{
 		Kind:       kind,
@@ -363,8 +363,8 @@ func (g *EKGame) openNopeWindow(kind string, bySeat, targetSeat int, rng *rand.R
 	}
 }
 
-// nopeResponders 현재 창에서 아뇨를 낼 수 있는 좌석 — 방금 카드를 낸
-// 좌석(LastSeat)만 빠진다. 아뇨 위의 아뇨는 원래 시전자도 낼 수 있다.
+// nopeResponders 현재 창에서 안돼를 낼 수 있는 좌석 — 방금 카드를 낸
+// 좌석(LastSeat)만 빠진다. 안돼 위의 안돼는 원래 시전자도 낼 수 있다.
 func (g *EKGame) nopeResponders() []int {
 	seats := []int{}
 	if g.Pending == nil {
@@ -378,8 +378,8 @@ func (g *EKGame) nopeResponders() []int {
 	return seats
 }
 
-// Nope 창에 아뇨를 겹친다 — 창은 처음부터 다시 열린다 (StateSeq++).
-// 뒤늦은(이미 지나간 창) 아뇨는 조용히 무시된다.
+// Nope 창에 안돼를 겹친다 — 창은 처음부터 다시 열린다 (StateSeq++).
+// 뒤늦은(이미 지나간 창) 안돼는 조용히 무시된다.
 func (g *EKGame) Nope(seat int) error {
 	if g.Phase != EKPhaseNopeWindow || g.Pending == nil {
 		return nil
@@ -390,7 +390,7 @@ func (g *EKGame) Nope(seat int) error {
 	p := g.Players[seat]
 	idx := p.HasCard(EKCardNope)
 	if idx < 0 {
-		return errors.New("아뇨 카드가 없습니다")
+		return errors.New("안돼 카드가 없습니다")
 	}
 	p.removeAt(idx)
 	g.Discard = append(g.Discard, EKCardNope)
@@ -403,7 +403,7 @@ func (g *EKGame) Nope(seat int) error {
 	if g.Pending.NopeCount%2 == 0 {
 		verdict = "유효"
 	}
-	msg := fmt.Sprintf("%s님이 아뇨! (%d겹 — 지금은 %s)", p.Name, g.Pending.NopeCount, verdict)
+	msg := fmt.Sprintf("%s님이 안돼! (%d겹 — 지금은 %s)", p.Name, g.Pending.NopeCount, verdict)
 	g.setLastAction(seat, msg)
 	g.emit("nope", seat, msg)
 
@@ -411,7 +411,7 @@ func (g *EKGame) Nope(seat int) error {
 	return nil
 }
 
-// Pass 아뇨 창 통과 동의. 응답자 전원이 통과하면 즉시 판정한다.
+// Pass 안돼 창 통과 동의. 응답자 전원이 통과하면 즉시 판정한다.
 func (g *EKGame) Pass(seat int, rng *rand.Rand) {
 	if g.Phase != EKPhaseNopeWindow || g.Pending == nil {
 		return
@@ -436,7 +436,7 @@ func (g *EKGame) ForcePassWindow(rng *rand.Rand) {
 	g.resolvePending(rng)
 }
 
-// resolvePending 아뇨 홀짝 판정 후 효과를 발동하거나 버린다
+// resolvePending 안돼 홀짝 판정 후 효과를 발동하거나 버린다
 func (g *EKGame) resolvePending(rng *rand.Rand) {
 	p := g.Pending
 	g.Pending = nil
@@ -444,7 +444,7 @@ func (g *EKGame) resolvePending(rng *rand.Rand) {
 		return
 	}
 	if p.NopeCount%2 == 1 { // 홀수 겹 — 무효
-		msg := fmt.Sprintf("%s님의 %s가 아뇨 %d겹으로 막혔습니다",
+		msg := fmt.Sprintf("%s님의 %s가 안돼 %d겹으로 막혔습니다",
 			g.Players[p.BySeat].Name, ekPendingName(p.Kind), p.NopeCount)
 		g.setLastAction(p.BySeat, msg)
 		g.emit("noped", p.BySeat, msg)
@@ -452,13 +452,13 @@ func (g *EKGame) resolvePending(rng *rand.Rand) {
 		return
 	}
 	if p.NopeCount > 0 {
-		g.emit("nope_undone", p.BySeat, fmt.Sprintf("아뇨가 %d겹으로 상쇄돼 %s가 발동합니다",
+		g.emit("nope_undone", p.BySeat, fmt.Sprintf("안돼가 %d겹으로 상쇄돼 %s가 발동합니다",
 			p.NopeCount, ekPendingName(p.Kind)))
 	}
 	g.applyEffect(p, rng)
 }
 
-// applyEffect 아뇨를 통과한 카드의 효과를 발동한다
+// applyEffect 안돼를 통과한 카드의 효과를 발동한다
 func (g *EKGame) applyEffect(p *EKPending, rng *rand.Rand) {
 	actor := g.Players[p.BySeat]
 

@@ -11,11 +11,11 @@ import (
 // 스냅샷(ek_game_state)과 자기 개인 메시지(ek_future)만 보고 반응한다.
 // 봇도 사람과 같은 조건 — 자기 손패(yourHand)와 공개 정보만 안다.
 //
-//   - 차례: 미래 예측로 본 맨 위가 폭탄이면 공격/건너뛰기를 최우선으로 쓰고,
+//   - 차례: 미리보기로 본 맨 위가 폭탄이면 공격/건너뛰기를 최우선으로 쓰고,
 //     아니면 위험도(남은 폭탄 ÷ 덱 잔량)가 높을 때 60% 확률로 쓴다.
 //     고양이 짝이 있으면 30% 확률로 훔치고, 그 외에는 그냥 뽑는다.
-//   - 미래 예측: 손에 있고 아는 게 없으면 40% 확률로 사용, 결과는 기억해 둔다.
-//   - 아뇨: 남이 낸 건너뛰기/공격에 20% 확률로 아뇨 (겹치기 포함).
+//   - 미리보기: 손에 있고 아는 게 없으면 40% 확률로 사용, 결과는 기억해 둔다.
+//   - 안돼: 남이 낸 건너뛰기/공격에 20% 확률로 안돼 (겹치기 포함).
 //   - 되꽂기: 30% 확률로 맨 위 바로 아래(악랄), 아니면 무작위 위치.
 //   - 호의: 무작위 카드를 건넨다.
 //
@@ -60,7 +60,7 @@ type ekBrain struct {
 	// lastKey 마지막으로 응답한 대기 상태 식별키 (중복 응답 방지)
 	lastKey string
 
-	// future 미래 예측로 본 덱 맨 위 카드들 (기억). 덱 잔량이 줄면 그만큼 앞에서
+	// future 미리보기로 본 덱 맨 위 카드들 (기억). 덱 잔량이 줄면 그만큼 앞에서
 	// 덜어내고, 늘어나면(폭탄 되꽂기) 또는 섞기이 보이면 통째로 버린다.
 	future     []string
 	futureDeck int
@@ -70,7 +70,7 @@ func newEKBrain() *ekBrain {
 	return &ekBrain{rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 }
 
-// decide 공용 러너 계약 — 스냅샷과 개인 미래 예측 결과에 반응한다
+// decide 공용 러너 계약 — 스냅샷과 개인 미리보기 결과에 반응한다
 func (b *ekBrain) decide(msg EKMessage) *EKMessage {
 	switch msg.Type {
 	case EKMsgFuture:
@@ -90,12 +90,12 @@ func (b *ekBrain) decide(msg EKMessage) *EKMessage {
 	return nil
 }
 
-// syncFuture 미래 예측 기억을 현재 덱 잔량에 맞춘다
+// syncFuture 미리보기 기억을 현재 덱 잔량에 맞춘다
 func (b *ekBrain) syncFuture(s ekBotState) {
 	if len(b.future) == 0 {
 		return
 	}
-	if b.futureDeck < 0 { // 미래 예측 직후 첫 스냅샷 — 여기가 기준점이다
+	if b.futureDeck < 0 { // 미리보기 직후 첫 스냅샷 — 여기가 기준점이다
 		b.futureDeck = s.DeckLeft
 		return
 	}
@@ -114,12 +114,12 @@ func (b *ekBrain) syncFuture(s ekBotState) {
 	}
 }
 
-// topIsBomb 미래 예측 기억상 덱 맨 위가 폭탄인지
+// topIsBomb 미리보기 기억상 덱 맨 위가 폭탄인지
 func (b *ekBrain) topIsBomb() bool {
 	return len(b.future) > 0 && b.future[0] == string(EKCardBomb)
 }
 
-// ekStateKey 대기 상태 식별키. 마감 시각(endsAt)만으로는 부족하다 — 아뇨
+// ekStateKey 대기 상태 식별키. 마감 시각(endsAt)만으로는 부족하다 — 안돼
 // 창(50ms~5초)이 닫히고 차례가 다시 열릴 때 두 마감이 같은 밀리초로 떨어지면
 // 키가 겹쳐 봇이 자기 차례를 통째로 건너뛴다(무응답 → AFK 자동 뽑기). 그래서
 // 실제로 무언가 바뀌면 반드시 달라지는 값들(버린 더미 맨 위·덱 잔량·차례 수·
@@ -166,9 +166,9 @@ func (b *ekBrain) decideState(s ekBotState) *EKMessage {
 		if s.Pending == nil {
 			return nil
 		}
-		// 방금 카드를 낸 사람은 자기 카드에 아뇨를 겹칠 수 없다. 아뇨가
+		// 방금 카드를 낸 사람은 자기 카드에 안돼를 겹칠 수 없다. 안돼가
 		// 한 번이라도 쌓이면 원래 시전자도 응답 대상이 된다 (서버가 마지막
-		// 아뇨를 낸 좌석만 걸러낸다).
+		// 안돼를 낸 좌석만 걸러낸다).
 		if s.Pending.NopeCount == 0 && s.Pending.BySeat == me {
 			return nil
 		}
@@ -193,7 +193,7 @@ func (b *ekBrain) decideState(s ekBotState) *EKMessage {
 		if s.DeckLeft >= 1 && b.rng.Float64() < 0.3 {
 			pos = 1 // 맨 위 바로 아래 — 다음 사람이 아니라 그 다음을 노린다
 		}
-		b.future = nil // 내가 되꽂았으니 미래 예측 기억은 무효
+		b.future = nil // 내가 되꽂았으니 미리보기 기억은 무효
 		return &EKMessage{Type: EKMsgDefusePlace, Payload: EKDefusePlacePayload{Position: pos}}
 	}
 	return nil
@@ -248,7 +248,7 @@ func (b *ekBrain) chooseTurn(s ekBotState) *EKMessage {
 		}
 	}
 
-	// 2) 아는 게 없고 미래 예측가 있으면 들여다본다
+	// 2) 아는 게 없고 미리보기가 있으면 들여다본다
 	if future >= 0 && len(b.future) == 0 && b.rng.Float64() < 0.4 {
 		return play(future)
 	}
@@ -303,7 +303,7 @@ func (b *ekBrain) choosePair(s ekBotState) *EKMessage {
 	return nil
 }
 
-// chooseNope 아뇨 창 응답 — 건너뛰기·공격만 20% 확률로 막고 나머지는 통과
+// chooseNope 안돼 창 응답 — 건너뛰기·공격만 20% 확률로 막고 나머지는 통과
 func (b *ekBrain) chooseNope(s ekBotState) *EKMessage {
 	kind := s.Pending.Kind
 	juicy := kind == string(EKCardSkip) || kind == string(EKCardAttack)
@@ -332,7 +332,7 @@ func (h *EKHub) spawnEKBot(room *ekRoom, name string) bool {
 }
 
 // takeoverEKBot 유예 만료 좌석을 이어받는 연습봇 — 이름·좌석을 유지해
-// 진행 중인 아뇨 창 통과·되꽂기가 그대로 이어진다
+// 진행 중인 안돼 창 통과·되꽂기가 그대로 이어진다
 func (h *EKHub) takeoverEKBot(room *ekRoom, seat int, name string) *EKClient {
 	bot := &EKClient{wsClient: newBotWSClient(), Hub: h}
 	bot.Name = name

@@ -132,7 +132,7 @@ func TestEKAttackAccumulation(t *testing.T) {
 			if g.Phase != EKPhaseNopeWindow {
 				t.Fatalf("phase = %s, want nope_window", g.Phase)
 			}
-			g.ForcePassWindow(rng) // 아무도 아뇨하지 않음
+			g.ForcePassWindow(rng) // 아무도 안돼하지 않음
 
 			if g.CurrentSeat != tc.wantSeat || g.TurnsLeft != tc.wantTurns {
 				t.Fatalf("current=%d turnsLeft=%d, want %d/%d",
@@ -171,13 +171,13 @@ func TestEKAttackTurnsConsumedByDraw(t *testing.T) {
 	}
 }
 
-// TestEKNopeParity 아뇨 겹침 홀짝 판정 — 짝수 겹이면 효과 유효, 홀수면 무효.
-// 아뇨가 나올 때마다 창이 다시 열려(StateSeq 증가) 재아뇨를 받는다.
+// TestEKNopeParity 안돼 겹침 홀짝 판정 — 짝수 겹이면 효과 유효, 홀수면 무효.
+// 안돼가 나올 때마다 창이 다시 열려(StateSeq 증가) 재안돼를 받는다.
 func TestEKNopeParity(t *testing.T) {
 	rng := ekRNG()
 	cases := []struct {
 		name      string
-		nopers    []int // 아뇨를 낸 좌석 순서
+		nopers    []int // 안돼를 낸 좌석 순서
 		wantSeat  int   // 판정 후 차례 좌석 (건너뛰기가 발동하면 1)
 		wantNoped bool
 	}{
@@ -210,27 +210,27 @@ func TestEKNopeParity(t *testing.T) {
 					t.Fatalf("nopeCount = %d, want %d", g.Pending.NopeCount, i+1)
 				}
 				if g.StateSeq <= prevSeq {
-					t.Fatalf("아뇨가 겹쳤는데 StateSeq 가 그대로 (%d) — 창이 재개방되지 않았다", g.StateSeq)
+					t.Fatalf("안돼가 겹쳤는데 StateSeq 가 그대로 (%d) — 창이 재개방되지 않았다", g.StateSeq)
 				}
 				prevSeq = g.StateSeq
 				if g.Phase != EKPhaseNopeWindow {
-					t.Fatalf("아뇨 후 phase = %s, want nope_window", g.Phase)
+					t.Fatalf("안돼 후 phase = %s, want nope_window", g.Phase)
 				}
 			}
 
-			// 방금 아뇨를 낸 좌석은 자기 아뇨에 다시 아뇨할 수 없다
+			// 방금 안돼를 낸 좌석은 자기 안돼에 다시 안돼할 수 없다
 			if len(tc.nopers) > 0 {
 				last := tc.nopers[len(tc.nopers)-1]
 				before := g.Pending.NopeCount
 				g.Nope(last)
 				if g.Pending.NopeCount != before {
-					t.Fatalf("마지막 아뇨 좌석이 자기 아뇨를 다시 겹쳤다")
+					t.Fatalf("마지막 안돼 좌석이 자기 안돼를 다시 겹쳤다")
 				}
 			}
 
 			g.ForcePassWindow(rng)
 			if g.CurrentSeat != tc.wantSeat {
-				t.Fatalf("판정 후 current = %d, want %d (아뇨 %d겹)",
+				t.Fatalf("판정 후 current = %d, want %d (안돼 %d겹)",
 					g.CurrentSeat, tc.wantSeat, len(tc.nopers))
 			}
 			if g.Phase != EKPhaseTurn {
@@ -239,7 +239,7 @@ func TestEKNopeParity(t *testing.T) {
 			if g.Pending != nil {
 				t.Fatalf("판정 후 pending 이 남았다: %+v", g.Pending)
 			}
-			// 낸 아뇨 수만큼 버린 더미에 쌓인다 (건너뛰기 1 + 아뇨 n)
+			// 낸 안돼 수만큼 버린 더미에 쌓인다 (건너뛰기 1 + 안돼 n)
 			if got, want := len(g.Discard), 1+len(tc.nopers); got != want {
 				t.Fatalf("버린 더미 = %d장, want %d", got, want)
 			}
@@ -252,7 +252,7 @@ func TestEKNopeParity(t *testing.T) {
 }
 
 // TestEKNopeWindowClosesByPasses 응답자 전원이 통과하면 마감을 기다리지 않고
-// 즉시 판정된다. 마지막 아뇨를 낸 좌석의 통과는 세지 않는다.
+// 즉시 판정된다. 마지막 안돼를 낸 좌석의 통과는 세지 않는다.
 func TestEKNopeWindowClosesByPasses(t *testing.T) {
 	rng := ekRNG()
 	g := ekRigged(t, [][]EKCard{{EKCardSkip}, {EKCardNope}, {}}, []EKCard{EKCardTaco})
@@ -546,7 +546,7 @@ func TestEKIllegalPlays(t *testing.T) {
 		target int
 	}{
 		{"해체는 낼 수 없다", 0, 0, -1},
-		{"아뇨는 자기 차례에 낼 수 없다", 0, 1, -1},
+		{"안돼는 자기 차례에 낼 수 없다", 0, 1, -1},
 		{"고양이 한 장은 낼 수 없다", 0, 2, -1},
 		{"호의은 상대가 필요하다", 0, 3, -1},
 		{"자기 자신에게 호의", 0, 3, 0},
@@ -566,27 +566,27 @@ func TestEKIllegalPlays(t *testing.T) {
 	if err := g.Draw(1, rng); err == nil {
 		t.Fatal("차례가 아닌 사람이 뽑았다")
 	}
-	// 아뇨 창 중에는 뽑을 수 없다
+	// 안돼 창 중에는 뽑을 수 없다
 	if err := g.Play(0, 3, 1, rng); err != nil {
 		t.Fatalf("Play favor: %v", err)
 	}
 	if err := g.Draw(0, rng); err == nil {
-		t.Fatal("아뇨 창 중에 뽑았다")
+		t.Fatal("안돼 창 중에 뽑았다")
 	}
-	// 아뇨 카드가 없으면 에러
+	// 안돼 카드가 없으면 에러
 	if err := g.Nope(2); err == nil {
-		t.Fatal("아뇨 카드 없이 아뇨했다")
+		t.Fatal("안돼 카드 없이 안돼했다")
 	}
-	// 낸 사람의 아뇨는 조용히 무시된다 (에러 아님)
+	// 낸 사람의 안돼는 조용히 무시된다 (에러 아님)
 	if err := g.Nope(0); err != nil {
-		t.Fatalf("낸 사람 아뇨가 에러를 냈다: %v", err)
+		t.Fatalf("낸 사람 안돼가 에러를 냈다: %v", err)
 	}
 	if g.Pending.NopeCount != 0 {
-		t.Fatalf("낸 사람 아뇨가 먹혔다: %d", g.Pending.NopeCount)
+		t.Fatalf("낸 사람 안돼가 먹혔다: %d", g.Pending.NopeCount)
 	}
 }
 
-// TestEKFuturePrivate 미래 예측는 개인 큐에만 쌓이고 방송 이벤트에는 카드가 없다
+// TestEKFuturePrivate 미리보기는 개인 큐에만 쌓이고 방송 이벤트에는 카드가 없다
 func TestEKFuturePrivate(t *testing.T) {
 	rng := ekRNG()
 	deck := []EKCard{EKCardBomb, EKCardTaco, EKCardMelon, EKCardBeard}
@@ -602,18 +602,18 @@ func TestEKFuturePrivate(t *testing.T) {
 		t.Fatalf("개인 이벤트 = %+v", priv)
 	}
 	if fmt.Sprint(priv[0].Cards) != fmt.Sprint(deck[:EKFutureCount]) {
-		t.Fatalf("미래 예측 결과 = %v, want %v", priv[0].Cards, deck[:EKFutureCount])
+		t.Fatalf("미리보기 결과 = %v, want %v", priv[0].Cards, deck[:EKFutureCount])
 	}
 	if len(g.DrainPrivates()) != 0 {
 		t.Fatal("개인 큐가 비워지지 않았다")
 	}
 	for _, ev := range g.DrainEvents() {
 		if strings.Contains(ev.Message, ekCardName(EKCardBomb)) {
-			t.Fatalf("미래 예측 결과가 방송 이벤트로 샜다: %q", ev.Message)
+			t.Fatalf("미리보기 결과가 방송 이벤트로 샜다: %q", ev.Message)
 		}
 	}
 	if g.Phase != EKPhaseTurn || g.CurrentSeat != 0 {
-		t.Fatalf("미래 예측 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
+		t.Fatalf("미리보기 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
 	}
 
 	// 덱이 3장 미만이면 있는 만큼만
@@ -623,7 +623,7 @@ func TestEKFuturePrivate(t *testing.T) {
 	}
 	g2.ForcePassWindow(rng)
 	if p := g2.DrainPrivates(); len(p) != 1 || len(p[0].Cards) != 1 {
-		t.Fatalf("짧은 덱 미래 예측 = %+v", p)
+		t.Fatalf("짧은 덱 미리보기 = %+v", p)
 	}
 }
 
@@ -659,7 +659,7 @@ func TestEKShuffle(t *testing.T) {
 
 // ==================== 무작위 완주 시뮬레이션 ====================
 
-// ekSimulate 무작위 합법 수로 한 판을 끝까지 돌린다. 교착·무한 아뇨 루프가
+// ekSimulate 무작위 합법 수로 한 판을 끝까지 돌린다. 교착·무한 안돼 루프가
 // 있으면 스텝 상한에 걸려 실패한다. 소요 차례 수를 돌려준다.
 func ekSimulate(t *testing.T, n int, rng *rand.Rand) (turns int, winner int) {
 	t.Helper()
@@ -751,7 +751,7 @@ func ekSimPlay(g *EKGame, seat int, rng *rand.Rand) bool {
 	return g.Play(seat, i, target, rng) == nil
 }
 
-// ekSimNopeWindow 응답자들이 25% 확률로 아뇨를 겹치고 나머지는 통과한다
+// ekSimNopeWindow 응답자들이 25% 확률로 안돼를 겹치고 나머지는 통과한다
 func ekSimNopeWindow(g *EKGame, rng *rand.Rand) {
 	for _, seat := range g.nopeResponders() {
 		if g.Players[seat].HasCard(EKCardNope) >= 0 && rng.Float64() < 0.25 {
@@ -767,7 +767,7 @@ func ekSimNopeWindow(g *EKGame, rng *rand.Rand) {
 	}
 }
 
-// TestEKRandomPlayAlwaysEnds 인원별 무작위 대국 완주 — 아뇨를 마구 겹쳐도
+// TestEKRandomPlayAlwaysEnds 인원별 무작위 대국 완주 — 안돼를 마구 겹쳐도
 // 카드가 유한해 창이 닫히고, 폭탄이 인원-1 장이라 반드시 1명만 남는다.
 func TestEKRandomPlayAlwaysEnds(t *testing.T) {
 	rng := ekRNG()

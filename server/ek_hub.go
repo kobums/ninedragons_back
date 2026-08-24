@@ -14,11 +14,11 @@ import (
 )
 
 // 익스플로딩 키튼 대기 상태 마감 타이머 (테스트에서 짧게 낮춘다).
-// 아뇨 창은 쿠(cp_hub.go)와 같은 방식으로 관리한다 — StateSeq 가 바뀔 때만
+// 안돼 창은 쿠(cp_hub.go)와 같은 방식으로 관리한다 — StateSeq 가 바뀔 때만
 // 마감을 다시 걸고(syncDeadline), 발화는 AfkSeq 로 지나간 것을 걸러낸다.
 var (
 	ekTurnTimeout   = 45 * time.Second // 차례 방치 → 자동 1장 뽑기
-	ekNopeTimeout   = 5 * time.Second  // 아뇨 창 → 통과
+	ekNopeTimeout   = 5 * time.Second  // 안돼 창 → 통과
 	ekFavorTimeout  = 20 * time.Second // 호의 방치 → 무작위 카드
 	ekDefuseTimeout = 15 * time.Second // 되꽂기 방치 → 무작위 위치
 )
@@ -30,7 +30,7 @@ type ekRoom struct {
 	PhaseTimer *time.Timer
 
 	// DeadlineSeq 마지막으로 마감을 건 StateSeq — 같은 창에 통과가 쌓일 때마다
-	// 마감이 늘어나지 않게 하는 근거 (아뇨가 겹치면 StateSeq 가 올라 새로 걸린다)
+	// 마감이 늘어나지 않게 하는 근거 (안돼가 겹치면 StateSeq 가 올라 새로 걸린다)
 	DeadlineSeq int
 
 	// Code 사설 방 초대 코드 (공용 로비는 "")
@@ -541,7 +541,7 @@ func (h *EKHub) handleDraw(client *EKClient) {
 	h.afterProgress(room)
 }
 
-// handleNope 아뇨 겹치기 — 뒤늦은(이미 지나간 창) 아뇨는 순수 규칙이
+// handleNope 안돼 겹치기 — 뒤늦은(이미 지나간 창) 안돼는 순수 규칙이
 // 조용히 무시한다. 카드가 없을 때만 에러다.
 func (h *EKHub) handleNope(client *EKClient) {
 	room := h.roomOf(client)
@@ -556,7 +556,7 @@ func (h *EKHub) handleNope(client *EKClient) {
 	h.afterProgress(room)
 }
 
-// handlePass 아뇨 창 통과 동의 — 뒤늦은 통과는 조용히 무시된다
+// handlePass 안돼 창 통과 동의 — 뒤늦은 통과는 조용히 무시된다
 func (h *EKHub) handlePass(client *EKClient) {
 	room := h.roomOf(client)
 	if room == nil {
@@ -627,7 +627,7 @@ func (h *EKHub) drainEvents(room *ekRoom) {
 	}
 }
 
-// drainPrivates 미래 예측 결과를 그 좌석 한 명에게만 보낸다 (은닉의 유일한
+// drainPrivates 미리보기 결과를 그 좌석 한 명에게만 보낸다 (은닉의 유일한
 // 예외 경로 — 방송하지 않는다)
 func (h *EKHub) drainPrivates(room *ekRoom) {
 	for _, pv := range room.Game.DrainPrivates() {
@@ -646,7 +646,7 @@ func (h *EKHub) drainPrivates(room *ekRoom) {
 // ==================== 대기 상태 마감 타이머 (AFK 진행 보장) ====================
 
 // syncDeadline 새 대기 상태(StateSeq 변경)가 열렸을 때만 마감을 다시 건다.
-// 같은 아뇨 창에 통과가 쌓이는 동안에는 처음 건 마감을 유지하고, 아뇨가
+// 같은 안돼 창에 통과가 쌓이는 동안에는 처음 건 마감을 유지하고, 안돼가
 // 겹치면 StateSeq 가 올라 5초가 새로 시작된다.
 func (h *EKHub) syncDeadline(room *ekRoom) {
 	game := room.Game
@@ -713,7 +713,7 @@ func (h *EKHub) handlePhaseFired(sig ekPhaseSignal) {
 		if game.Pending == nil {
 			return
 		}
-		log.Printf("[키튼][창통과] game=%s | 아뇨 창 마감 — 통과 (겹침 %d)",
+		log.Printf("[키튼][창통과] game=%s | 안돼 창 마감 — 통과 (겹침 %d)",
 			game.ID, game.Pending.NopeCount)
 		game.ForcePassWindow(h.rng)
 
@@ -932,7 +932,7 @@ func (h *EKHub) handleDisconnect(client *EKClient) {
 }
 
 // handleGraceExpired 유예 안에 재접속하지 않은 좌석은 연습봇으로 대체한다 —
-// 아뇨 창 통과·되꽂기가 이탈 좌석에 막히지 않는 근거
+// 안돼 창 통과·되꽂기가 이탈 좌석에 막히지 않는 근거
 func (h *EKHub) handleGraceExpired(sessionID string) {
 	client, ok := h.expire(sessionID)
 	if !ok {
