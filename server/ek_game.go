@@ -9,24 +9,24 @@ import (
 
 // ==================== 익스플로딩 키튼 순수 규칙 ====================
 //
-// 덱 구성·차례·카드 효과·노프 창·되꽂기·탈락만 다룬다. 클라이언트·타이머를
+// 덱 구성·차례·카드 효과·아뇨 창·되꽂기·탈락만 다룬다. 클라이언트·타이머를
 // 모르며, 허브(ek_hub.go)가 마감을 걸고 이벤트 큐(DrainEvents/DrainPrivates)를
 // 방송한다.
 //
 // 진행 모델:
 //
 //	turn ──(카드 냄)──> nope_window ──(전원 통과 or 마감)──> 효과 판정
-//	                        ↑ 노프가 나오면 창을 다시 연다 (StateSeq++)
-//	turn ──(뽑기)──> 폭탄이면 defuse_place, 디퓨즈 없으면 탈락
+//	                        ↑ 아뇨가 나오면 창을 다시 연다 (StateSeq++)
+//	turn ──(뽑기)──> 폭탄이면 defuse_place, 해체 없으면 탈락
 //
-// 노프 겹침은 홀짝으로 판정한다 — NopeCount 가 짝수면 효과 발동, 홀수면 무효.
-// 노프 카드는 유한(5장)하므로 창은 반드시 닫힌다.
+// 아뇨 겹침은 홀짝으로 판정한다 — NopeCount 가 짝수면 효과 발동, 홀수면 무효.
+// 아뇨 카드는 유한(5장)하므로 창은 반드시 닫힌다.
 //
 // 종료 보장: 폭탄은 인원-1 장이고, 손에 들 수 없어 항상 덱 안에 있다
 // (되꽂기로 돌아가거나 탈락과 함께 사라진다). 남은 폭탄 수 = 생존자 수 - 1
 // 이라 게임 중에는 덱이 절대 비지 않고, 마지막 탈락이 곧 종료다.
 
-// ekBaseDeck 폭탄·디퓨즈를 뺀 기본 덱 46장 (셔플 전 기준)
+// ekBaseDeck 폭탄·해체를 뺀 기본 덱 46장 (섞기 전 기준)
 func ekBaseDeck() []EKCard {
 	deck := []EKCard{}
 	for _, spec := range ekBaseCounts {
@@ -79,8 +79,8 @@ func (g *EKGame) CanStart() bool {
 	return g.Phase == EKPhaseWaiting && len(g.Players) >= EKMinPlayers
 }
 
-// Start 게임 시작 — 디퓨즈 1장 + 기본 덱 7장을 나눠 주고, 그 뒤 폭탄 n-1
-// 장과 남은 디퓨즈 6-n 장을 덱에 섞는다.
+// Start 게임 시작 — 해체 1장 + 기본 덱 7장을 나눠 주고, 그 뒤 폭탄 n-1
+// 장과 남은 해체 6-n 장을 덱에 섞는다.
 func (g *EKGame) Start(rng *rand.Rand) error {
 	if !g.CanStart() {
 		return fmt.Errorf("%d명 이상 모여야 시작할 수 있습니다", EKMinPlayers)
@@ -104,7 +104,7 @@ func (g *EKGame) Start(rng *rand.Rand) error {
 	for i := 0; i < n-1; i++ { // 폭탄 n-1 장 — 마지막 1명이 남으면 끝난다
 		deck = append(deck, EKCardBomb)
 	}
-	for i := 0; i < EKDefuseTotal-n; i++ { // 나눠 주고 남은 디퓨즈
+	for i := 0; i < EKDefuseTotal-n; i++ { // 나눠 주고 남은 해체
 		deck = append(deck, EKCardDefuse)
 	}
 	rng.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
@@ -131,7 +131,7 @@ func (g *EKGame) DrainEvents() []EKGameEvent {
 	return evs
 }
 
-// DrainPrivates 쌓인 개인 이벤트(예지)를 꺼내고 비운다.
+// DrainPrivates 쌓인 개인 이벤트(미래 예측)를 꺼내고 비운다.
 // 허브는 이걸 해당 좌석 한 명에게만 보낸다.
 func (g *EKGame) DrainPrivates() []EKPrivateEvent {
 	evs := g.privates
@@ -258,9 +258,9 @@ func (g *EKGame) finish() {
 	g.StateSeq++
 }
 
-// ==================== 카드 내기 / 노프 창 ====================
+// ==================== 카드 내기 / 아뇨 창 ====================
 
-// Play 자기 차례에 기능 카드 한 장을 낸다 → 노프 창이 열린다.
+// Play 자기 차례에 기능 카드 한 장을 낸다 → 아뇨 창이 열린다.
 func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	if g.Phase != EKPhaseTurn {
 		return errors.New("지금은 카드를 낼 수 없습니다")
@@ -278,9 +278,9 @@ func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	case card == EKCardBomb:
 		return errors.New("폭탄 고양이는 낼 수 없습니다")
 	case card == EKCardDefuse:
-		return errors.New("디퓨즈는 폭탄을 뽑았을 때 자동으로 쓰입니다")
+		return errors.New("해체는 폭탄을 뽑았을 때 자동으로 쓰입니다")
 	case card == EKCardNope:
-		return errors.New("노프는 다른 사람이 카드를 냈을 때만 낼 수 있습니다")
+		return errors.New("아뇨는 다른 사람이 카드를 냈을 때만 낼 수 있습니다")
 	case ekIsCat(card):
 		return errors.New("고양이 카드는 같은 종류 2장을 함께 내야 합니다")
 	}
@@ -288,7 +288,7 @@ func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	target := -1
 	if card == EKCardFavor {
 		if !g.seatAlive(targetSeat) || targetSeat == seat {
-			return errors.New("부탁할 상대를 골라주세요")
+			return errors.New("호의할 상대를 골라주세요")
 		}
 		target = targetSeat
 	}
@@ -307,7 +307,7 @@ func (g *EKGame) Play(seat, index, targetSeat int, rng *rand.Rand) error {
 	return nil
 }
 
-// PlayPair 같은 종류 고양이 2장 → 대상 손패에서 무작위 1장 훔치기 (노프 대상)
+// PlayPair 같은 종류 고양이 2장 → 대상 손패에서 무작위 1장 훔치기 (아뇨 대상)
 func (g *EKGame) PlayPair(seat int, indexes []int, targetSeat int, rng *rand.Rand) error {
 	if g.Phase != EKPhaseTurn {
 		return errors.New("지금은 카드를 낼 수 없습니다")
@@ -347,7 +347,7 @@ func (g *EKGame) PlayPair(seat int, indexes []int, targetSeat int, rng *rand.Ran
 	return nil
 }
 
-// openNopeWindow 노프 창을 연다. 응답자가 없으면(전원 탈락 등) 즉시 판정.
+// openNopeWindow 아뇨 창을 연다. 응답자가 없으면(전원 탈락 등) 즉시 판정.
 func (g *EKGame) openNopeWindow(kind string, bySeat, targetSeat int, rng *rand.Rand) {
 	g.Pending = &EKPending{
 		Kind:       kind,
@@ -363,8 +363,8 @@ func (g *EKGame) openNopeWindow(kind string, bySeat, targetSeat int, rng *rand.R
 	}
 }
 
-// nopeResponders 현재 창에서 노프를 낼 수 있는 좌석 — 방금 카드를 낸
-// 좌석(LastSeat)만 빠진다. 노프 위의 노프는 원래 시전자도 낼 수 있다.
+// nopeResponders 현재 창에서 아뇨를 낼 수 있는 좌석 — 방금 카드를 낸
+// 좌석(LastSeat)만 빠진다. 아뇨 위의 아뇨는 원래 시전자도 낼 수 있다.
 func (g *EKGame) nopeResponders() []int {
 	seats := []int{}
 	if g.Pending == nil {
@@ -378,8 +378,8 @@ func (g *EKGame) nopeResponders() []int {
 	return seats
 }
 
-// Nope 창에 노프를 겹친다 — 창은 처음부터 다시 열린다 (StateSeq++).
-// 뒤늦은(이미 지나간 창) 노프는 조용히 무시된다.
+// Nope 창에 아뇨를 겹친다 — 창은 처음부터 다시 열린다 (StateSeq++).
+// 뒤늦은(이미 지나간 창) 아뇨는 조용히 무시된다.
 func (g *EKGame) Nope(seat int) error {
 	if g.Phase != EKPhaseNopeWindow || g.Pending == nil {
 		return nil
@@ -390,7 +390,7 @@ func (g *EKGame) Nope(seat int) error {
 	p := g.Players[seat]
 	idx := p.HasCard(EKCardNope)
 	if idx < 0 {
-		return errors.New("노프 카드가 없습니다")
+		return errors.New("아뇨 카드가 없습니다")
 	}
 	p.removeAt(idx)
 	g.Discard = append(g.Discard, EKCardNope)
@@ -403,7 +403,7 @@ func (g *EKGame) Nope(seat int) error {
 	if g.Pending.NopeCount%2 == 0 {
 		verdict = "유효"
 	}
-	msg := fmt.Sprintf("%s님이 노프! (%d겹 — 지금은 %s)", p.Name, g.Pending.NopeCount, verdict)
+	msg := fmt.Sprintf("%s님이 아뇨! (%d겹 — 지금은 %s)", p.Name, g.Pending.NopeCount, verdict)
 	g.setLastAction(seat, msg)
 	g.emit("nope", seat, msg)
 
@@ -411,7 +411,7 @@ func (g *EKGame) Nope(seat int) error {
 	return nil
 }
 
-// Pass 노프 창 통과 동의. 응답자 전원이 통과하면 즉시 판정한다.
+// Pass 아뇨 창 통과 동의. 응답자 전원이 통과하면 즉시 판정한다.
 func (g *EKGame) Pass(seat int, rng *rand.Rand) {
 	if g.Phase != EKPhaseNopeWindow || g.Pending == nil {
 		return
@@ -436,7 +436,7 @@ func (g *EKGame) ForcePassWindow(rng *rand.Rand) {
 	g.resolvePending(rng)
 }
 
-// resolvePending 노프 홀짝 판정 후 효과를 발동하거나 버린다
+// resolvePending 아뇨 홀짝 판정 후 효과를 발동하거나 버린다
 func (g *EKGame) resolvePending(rng *rand.Rand) {
 	p := g.Pending
 	g.Pending = nil
@@ -444,7 +444,7 @@ func (g *EKGame) resolvePending(rng *rand.Rand) {
 		return
 	}
 	if p.NopeCount%2 == 1 { // 홀수 겹 — 무효
-		msg := fmt.Sprintf("%s님의 %s가 노프 %d겹으로 막혔습니다",
+		msg := fmt.Sprintf("%s님의 %s가 아뇨 %d겹으로 막혔습니다",
 			g.Players[p.BySeat].Name, ekPendingName(p.Kind), p.NopeCount)
 		g.setLastAction(p.BySeat, msg)
 		g.emit("noped", p.BySeat, msg)
@@ -452,13 +452,13 @@ func (g *EKGame) resolvePending(rng *rand.Rand) {
 		return
 	}
 	if p.NopeCount > 0 {
-		g.emit("nope_undone", p.BySeat, fmt.Sprintf("노프가 %d겹으로 상쇄돼 %s가 발동합니다",
+		g.emit("nope_undone", p.BySeat, fmt.Sprintf("아뇨가 %d겹으로 상쇄돼 %s가 발동합니다",
 			p.NopeCount, ekPendingName(p.Kind)))
 	}
 	g.applyEffect(p, rng)
 }
 
-// applyEffect 노프를 통과한 카드의 효과를 발동한다
+// applyEffect 아뇨를 통과한 카드의 효과를 발동한다
 func (g *EKGame) applyEffect(p *EKPending, rng *rand.Rand) {
 	actor := g.Players[p.BySeat]
 
@@ -491,12 +491,12 @@ func (g *EKGame) applyEffect(p *EKPending, rng *rand.Rand) {
 
 	case string(EKCardFavor):
 		if !g.seatAlive(p.TargetSeat) {
-			g.emit("favor_empty", p.BySeat, "부탁할 상대가 없어 무산됐습니다")
+			g.emit("favor_empty", p.BySeat, "호의할 상대가 없어 무산됐습니다")
 			g.backToTurn()
 			return
 		}
 		if len(g.Players[p.TargetSeat].Hand) == 0 {
-			g.emit("favor_empty", p.BySeat, fmt.Sprintf("%s님이 줄 카드가 없어 부탁이 무산됐습니다",
+			g.emit("favor_empty", p.BySeat, fmt.Sprintf("%s님이 줄 카드가 없어 호의이 무산됐습니다",
 				g.Players[p.TargetSeat].Name))
 			g.backToTurn()
 			return
@@ -533,16 +533,16 @@ func (g *EKGame) applyEffect(p *EKPending, rng *rand.Rand) {
 	}
 }
 
-// ==================== 부탁 (favor_wait) ====================
+// ==================== 호의 (favor_wait) ====================
 
-// Give 부탁 대상이 카드 1장을 골라 시전자에게 건넨다.
+// Give 호의 대상이 카드 1장을 골라 시전자에게 건넨다.
 // 카드 종류는 두 사람만 안다 — 이벤트에 싣지 않는다.
 func (g *EKGame) Give(seat, index int) error {
 	if g.Phase != EKPhaseFavorWait || g.Pending == nil {
 		return errors.New("지금은 카드를 건넬 수 없습니다")
 	}
 	if seat != g.Pending.TargetSeat {
-		return errors.New("부탁받은 사람만 카드를 건넬 수 있습니다")
+		return errors.New("호의받은 사람만 카드를 건넬 수 있습니다")
 	}
 	giver := g.Players[seat]
 	if len(giver.Hand) == 0 {
@@ -566,7 +566,7 @@ func (g *EKGame) Give(seat, index int) error {
 	return nil
 }
 
-// AutoGive 부탁 방치 — 무작위 카드를 건넨다 (허브 마감 경로)
+// AutoGive 호의 방치 — 무작위 카드를 건넨다 (허브 마감 경로)
 func (g *EKGame) AutoGive(rng *rand.Rand) {
 	if g.Phase != EKPhaseFavorWait || g.Pending == nil {
 		return
@@ -585,7 +585,7 @@ func (g *EKGame) AutoGive(rng *rand.Rand) {
 
 // ==================== 뽑기 / 폭탄 / 되꽂기 / 탈락 ====================
 
-// Draw 덱에서 1장 뽑아 차례를 끝낸다. 폭탄이면 디퓨즈로 막거나 탈락한다.
+// Draw 덱에서 1장 뽑아 차례를 끝낸다. 폭탄이면 해체로 막거나 탈락한다.
 func (g *EKGame) Draw(seat int, rng *rand.Rand) error {
 	if g.Phase != EKPhaseTurn {
 		return errors.New("지금은 뽑을 수 없습니다")
@@ -616,7 +616,7 @@ func (g *EKGame) Draw(seat int, rng *rand.Rand) error {
 	if idx := p.HasCard(EKCardDefuse); idx >= 0 {
 		p.removeAt(idx)
 		g.Discard = append(g.Discard, EKCardDefuse)
-		msg := fmt.Sprintf("%s님이 폭탄 고양이를 디퓨즈로 막았습니다!", p.Name)
+		msg := fmt.Sprintf("%s님이 폭탄 고양이를 해체로 막았습니다!", p.Name)
 		g.setLastAction(seat, msg)
 		g.emit("defuse", seat, msg)
 

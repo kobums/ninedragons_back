@@ -59,8 +59,8 @@ func ekCount(cards []EKCard, want EKCard) int {
 	return n
 }
 
-// TestEKDeckComposition 인원별 덱 구성 — 폭탄 n-1, 디퓨즈 1인 1장 + 잔여,
-// 시작 손패 8장(디퓨즈 1 + 7). 카드 총량이 보존돼야 한다.
+// TestEKDeckComposition 인원별 덱 구성 — 폭탄 n-1, 해체 1인 1장 + 잔여,
+// 시작 손패 8장(해체 1 + 7). 카드 총량이 보존돼야 한다.
 func TestEKDeckComposition(t *testing.T) {
 	rng := ekRNG()
 	for n := EKMinPlayers; n <= EKMaxPlayers; n++ {
@@ -71,7 +71,7 @@ func TestEKDeckComposition(t *testing.T) {
 				t.Fatalf("덱 폭탄 = %d, want %d", got, want)
 			}
 			if got, want := ekCount(g.Deck, EKCardDefuse), EKDefuseTotal-n; got != want {
-				t.Fatalf("덱 디퓨즈 = %d, want %d", got, want)
+				t.Fatalf("덱 해체 = %d, want %d", got, want)
 			}
 			if got, want := len(g.Deck), 51-7*n; got != want {
 				t.Fatalf("덱 장수 = %d, want %d", got, want)
@@ -83,7 +83,7 @@ func TestEKDeckComposition(t *testing.T) {
 					t.Fatalf("seat%d 손패 = %d, want %d", p.Seat, len(p.Hand), EKStartHand+1)
 				}
 				if got := ekCount(p.Hand, EKCardDefuse); got != 1 {
-					t.Fatalf("seat%d 시작 디퓨즈 = %d, want 1", p.Seat, got)
+					t.Fatalf("seat%d 시작 해체 = %d, want 1", p.Seat, got)
 				}
 				if got := ekCount(p.Hand, EKCardBomb); got != 0 {
 					t.Fatalf("seat%d 손패에 폭탄 %d장 — 폭탄은 손에 들 수 없다", p.Seat, got)
@@ -132,7 +132,7 @@ func TestEKAttackAccumulation(t *testing.T) {
 			if g.Phase != EKPhaseNopeWindow {
 				t.Fatalf("phase = %s, want nope_window", g.Phase)
 			}
-			g.ForcePassWindow(rng) // 아무도 노프하지 않음
+			g.ForcePassWindow(rng) // 아무도 아뇨하지 않음
 
 			if g.CurrentSeat != tc.wantSeat || g.TurnsLeft != tc.wantTurns {
 				t.Fatalf("current=%d turnsLeft=%d, want %d/%d",
@@ -171,13 +171,13 @@ func TestEKAttackTurnsConsumedByDraw(t *testing.T) {
 	}
 }
 
-// TestEKNopeParity 노프 겹침 홀짝 판정 — 짝수 겹이면 효과 유효, 홀수면 무효.
-// 노프가 나올 때마다 창이 다시 열려(StateSeq 증가) 재노프를 받는다.
+// TestEKNopeParity 아뇨 겹침 홀짝 판정 — 짝수 겹이면 효과 유효, 홀수면 무효.
+// 아뇨가 나올 때마다 창이 다시 열려(StateSeq 증가) 재아뇨를 받는다.
 func TestEKNopeParity(t *testing.T) {
 	rng := ekRNG()
 	cases := []struct {
 		name      string
-		nopers    []int // 노프를 낸 좌석 순서
+		nopers    []int // 아뇨를 낸 좌석 순서
 		wantSeat  int   // 판정 후 차례 좌석 (건너뛰기가 발동하면 1)
 		wantNoped bool
 	}{
@@ -210,27 +210,27 @@ func TestEKNopeParity(t *testing.T) {
 					t.Fatalf("nopeCount = %d, want %d", g.Pending.NopeCount, i+1)
 				}
 				if g.StateSeq <= prevSeq {
-					t.Fatalf("노프가 겹쳤는데 StateSeq 가 그대로 (%d) — 창이 재개방되지 않았다", g.StateSeq)
+					t.Fatalf("아뇨가 겹쳤는데 StateSeq 가 그대로 (%d) — 창이 재개방되지 않았다", g.StateSeq)
 				}
 				prevSeq = g.StateSeq
 				if g.Phase != EKPhaseNopeWindow {
-					t.Fatalf("노프 후 phase = %s, want nope_window", g.Phase)
+					t.Fatalf("아뇨 후 phase = %s, want nope_window", g.Phase)
 				}
 			}
 
-			// 방금 노프를 낸 좌석은 자기 노프에 다시 노프할 수 없다
+			// 방금 아뇨를 낸 좌석은 자기 아뇨에 다시 아뇨할 수 없다
 			if len(tc.nopers) > 0 {
 				last := tc.nopers[len(tc.nopers)-1]
 				before := g.Pending.NopeCount
 				g.Nope(last)
 				if g.Pending.NopeCount != before {
-					t.Fatalf("마지막 노프 좌석이 자기 노프를 다시 겹쳤다")
+					t.Fatalf("마지막 아뇨 좌석이 자기 아뇨를 다시 겹쳤다")
 				}
 			}
 
 			g.ForcePassWindow(rng)
 			if g.CurrentSeat != tc.wantSeat {
-				t.Fatalf("판정 후 current = %d, want %d (노프 %d겹)",
+				t.Fatalf("판정 후 current = %d, want %d (아뇨 %d겹)",
 					g.CurrentSeat, tc.wantSeat, len(tc.nopers))
 			}
 			if g.Phase != EKPhaseTurn {
@@ -239,7 +239,7 @@ func TestEKNopeParity(t *testing.T) {
 			if g.Pending != nil {
 				t.Fatalf("판정 후 pending 이 남았다: %+v", g.Pending)
 			}
-			// 낸 노프 수만큼 버린 더미에 쌓인다 (건너뛰기 1 + 노프 n)
+			// 낸 아뇨 수만큼 버린 더미에 쌓인다 (건너뛰기 1 + 아뇨 n)
 			if got, want := len(g.Discard), 1+len(tc.nopers); got != want {
 				t.Fatalf("버린 더미 = %d장, want %d", got, want)
 			}
@@ -252,7 +252,7 @@ func TestEKNopeParity(t *testing.T) {
 }
 
 // TestEKNopeWindowClosesByPasses 응답자 전원이 통과하면 마감을 기다리지 않고
-// 즉시 판정된다. 마지막 노프를 낸 좌석의 통과는 세지 않는다.
+// 즉시 판정된다. 마지막 아뇨를 낸 좌석의 통과는 세지 않는다.
 func TestEKNopeWindowClosesByPasses(t *testing.T) {
 	rng := ekRNG()
 	g := ekRigged(t, [][]EKCard{{EKCardSkip}, {EKCardNope}, {}}, []EKCard{EKCardTaco})
@@ -299,10 +299,10 @@ func TestEKDefusePlacePosition(t *testing.T) {
 				t.Fatalf("Draw: %v", err)
 			}
 			if g.Phase != EKPhaseDefusePlace || g.Pending == nil || g.Pending.BySeat != 0 {
-				t.Fatalf("디퓨즈 후 phase=%s pending=%+v", g.Phase, g.Pending)
+				t.Fatalf("해체 후 phase=%s pending=%+v", g.Phase, g.Pending)
 			}
 			if len(g.Players[0].Hand) != 0 {
-				t.Fatalf("디퓨즈가 손에 남았다: %v", g.Players[0].Hand)
+				t.Fatalf("해체가 손에 남았다: %v", g.Players[0].Hand)
 			}
 			// 되꽂기 전 덱에는 폭탄이 없다 (손에도 없다 — 잠시 공중에 있다)
 			if ekCount(g.Deck, EKCardBomb) != 0 {
@@ -344,7 +344,7 @@ func TestEKDefuseAutoPlace(t *testing.T) {
 	}
 }
 
-// TestEKElimination 탈락 처리 — 디퓨즈 없이 폭탄을 뽑으면 alive=false 로
+// TestEKElimination 탈락 처리 — 해체 없이 폭탄을 뽑으면 alive=false 로
 // 남고(방을 나가지 않는다) 손패는 버린 더미로, 그 폭탄은 덱에서 사라진다.
 // 마지막 1명이 남으면 종료.
 func TestEKElimination(t *testing.T) {
@@ -408,7 +408,7 @@ func TestEKAttackedPlayerEliminated(t *testing.T) {
 	if g.CurrentSeat != 1 || g.TurnsLeft != 2 {
 		t.Fatalf("공격 후 current=%d turnsLeft=%d", g.CurrentSeat, g.TurnsLeft)
 	}
-	if err := g.Draw(1, rng); err != nil { // 디퓨즈 없음 → 탈락
+	if err := g.Draw(1, rng); err != nil { // 해체 없음 → 탈락
 		t.Fatalf("Draw: %v", err)
 	}
 	if g.Players[1].Alive {
@@ -419,7 +419,7 @@ func TestEKAttackedPlayerEliminated(t *testing.T) {
 	}
 }
 
-// TestEKFavor 부탁 — 대상이 카드를 고를 때까지 favor_wait, 방치는 무작위
+// TestEKFavor 호의 — 대상이 카드를 고를 때까지 favor_wait, 방치는 무작위
 func TestEKFavor(t *testing.T) {
 	rng := ekRNG()
 	g := ekRigged(t,
@@ -435,7 +435,7 @@ func TestEKFavor(t *testing.T) {
 	}
 	// 시전자는 대신 낼 수 없다
 	if err := g.Give(0, 0); err == nil {
-		t.Fatal("부탁받지 않은 사람이 카드를 건넸다")
+		t.Fatal("호의받지 않은 사람이 카드를 건넸다")
 	}
 	if err := g.Give(1, 1); err != nil { // 멜론을 건넨다
 		t.Fatalf("Give: %v", err)
@@ -447,7 +447,7 @@ func TestEKFavor(t *testing.T) {
 		t.Fatalf("건넨 쪽 손패 = %v", g.Players[1].Hand)
 	}
 	if g.Phase != EKPhaseTurn || g.CurrentSeat != 0 {
-		t.Fatalf("부탁 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
+		t.Fatalf("호의 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
 	}
 	// 건넨 카드 종류는 이벤트에 실리지 않는다
 	for _, ev := range g.DrainEvents() {
@@ -463,7 +463,7 @@ func TestEKFavor(t *testing.T) {
 	}
 	g2.ForcePassWindow(rng)
 	if g2.Phase != EKPhaseTurn {
-		t.Fatalf("빈손 상대 부탁이 창을 남겼다: %s", g2.Phase)
+		t.Fatalf("빈손 상대 호의이 창을 남겼다: %s", g2.Phase)
 	}
 
 	// 방치 → 무작위 카드
@@ -545,11 +545,11 @@ func TestEKIllegalPlays(t *testing.T) {
 		index  int
 		target int
 	}{
-		{"디퓨즈는 낼 수 없다", 0, 0, -1},
-		{"노프는 자기 차례에 낼 수 없다", 0, 1, -1},
+		{"해체는 낼 수 없다", 0, 0, -1},
+		{"아뇨는 자기 차례에 낼 수 없다", 0, 1, -1},
 		{"고양이 한 장은 낼 수 없다", 0, 2, -1},
-		{"부탁은 상대가 필요하다", 0, 3, -1},
-		{"자기 자신에게 부탁", 0, 3, 0},
+		{"호의은 상대가 필요하다", 0, 3, -1},
+		{"자기 자신에게 호의", 0, 3, 0},
 		{"없는 인덱스", 0, 99, -1},
 		{"차례가 아닌 사람", 1, 0, -1},
 	}
@@ -566,27 +566,27 @@ func TestEKIllegalPlays(t *testing.T) {
 	if err := g.Draw(1, rng); err == nil {
 		t.Fatal("차례가 아닌 사람이 뽑았다")
 	}
-	// 노프 창 중에는 뽑을 수 없다
+	// 아뇨 창 중에는 뽑을 수 없다
 	if err := g.Play(0, 3, 1, rng); err != nil {
 		t.Fatalf("Play favor: %v", err)
 	}
 	if err := g.Draw(0, rng); err == nil {
-		t.Fatal("노프 창 중에 뽑았다")
+		t.Fatal("아뇨 창 중에 뽑았다")
 	}
-	// 노프 카드가 없으면 에러
+	// 아뇨 카드가 없으면 에러
 	if err := g.Nope(2); err == nil {
-		t.Fatal("노프 카드 없이 노프했다")
+		t.Fatal("아뇨 카드 없이 아뇨했다")
 	}
-	// 낸 사람의 노프는 조용히 무시된다 (에러 아님)
+	// 낸 사람의 아뇨는 조용히 무시된다 (에러 아님)
 	if err := g.Nope(0); err != nil {
-		t.Fatalf("낸 사람 노프가 에러를 냈다: %v", err)
+		t.Fatalf("낸 사람 아뇨가 에러를 냈다: %v", err)
 	}
 	if g.Pending.NopeCount != 0 {
-		t.Fatalf("낸 사람 노프가 먹혔다: %d", g.Pending.NopeCount)
+		t.Fatalf("낸 사람 아뇨가 먹혔다: %d", g.Pending.NopeCount)
 	}
 }
 
-// TestEKFuturePrivate 예지는 개인 큐에만 쌓이고 방송 이벤트에는 카드가 없다
+// TestEKFuturePrivate 미래 예측는 개인 큐에만 쌓이고 방송 이벤트에는 카드가 없다
 func TestEKFuturePrivate(t *testing.T) {
 	rng := ekRNG()
 	deck := []EKCard{EKCardBomb, EKCardTaco, EKCardMelon, EKCardBeard}
@@ -602,18 +602,18 @@ func TestEKFuturePrivate(t *testing.T) {
 		t.Fatalf("개인 이벤트 = %+v", priv)
 	}
 	if fmt.Sprint(priv[0].Cards) != fmt.Sprint(deck[:EKFutureCount]) {
-		t.Fatalf("예지 결과 = %v, want %v", priv[0].Cards, deck[:EKFutureCount])
+		t.Fatalf("미래 예측 결과 = %v, want %v", priv[0].Cards, deck[:EKFutureCount])
 	}
 	if len(g.DrainPrivates()) != 0 {
 		t.Fatal("개인 큐가 비워지지 않았다")
 	}
 	for _, ev := range g.DrainEvents() {
 		if strings.Contains(ev.Message, ekCardName(EKCardBomb)) {
-			t.Fatalf("예지 결과가 방송 이벤트로 샜다: %q", ev.Message)
+			t.Fatalf("미래 예측 결과가 방송 이벤트로 샜다: %q", ev.Message)
 		}
 	}
 	if g.Phase != EKPhaseTurn || g.CurrentSeat != 0 {
-		t.Fatalf("예지 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
+		t.Fatalf("미래 예측 후 phase=%s current=%d — 차례는 유지된다", g.Phase, g.CurrentSeat)
 	}
 
 	// 덱이 3장 미만이면 있는 만큼만
@@ -623,11 +623,11 @@ func TestEKFuturePrivate(t *testing.T) {
 	}
 	g2.ForcePassWindow(rng)
 	if p := g2.DrainPrivates(); len(p) != 1 || len(p[0].Cards) != 1 {
-		t.Fatalf("짧은 덱 예지 = %+v", p)
+		t.Fatalf("짧은 덱 미래 예측 = %+v", p)
 	}
 }
 
-// TestEKShuffle 셔플은 덱 구성을 바꾸지 않고 순서만 바꾼다
+// TestEKShuffle 섞기은 덱 구성을 바꾸지 않고 순서만 바꾼다
 func TestEKShuffle(t *testing.T) {
 	rng := ekRNG()
 	deck := []EKCard{}
@@ -640,7 +640,7 @@ func TestEKShuffle(t *testing.T) {
 	}
 	g.ForcePassWindow(rng)
 	if len(g.Deck) != len(deck) {
-		t.Fatalf("셔플 후 덱 장수 = %d, want %d", len(g.Deck), len(deck))
+		t.Fatalf("섞기 후 덱 장수 = %d, want %d", len(g.Deck), len(deck))
 	}
 	before, after := map[EKCard]int{}, map[EKCard]int{}
 	for _, c := range deck {
@@ -650,16 +650,16 @@ func TestEKShuffle(t *testing.T) {
 		after[c]++
 	}
 	if fmt.Sprint(before) != fmt.Sprint(after) {
-		t.Fatalf("셔플이 덱 구성을 바꿨다")
+		t.Fatalf("섞기이 덱 구성을 바꿨다")
 	}
 	if g.CurrentSeat != 0 || g.Phase != EKPhaseTurn {
-		t.Fatalf("셔플 후 current=%d phase=%s", g.CurrentSeat, g.Phase)
+		t.Fatalf("섞기 후 current=%d phase=%s", g.CurrentSeat, g.Phase)
 	}
 }
 
 // ==================== 무작위 완주 시뮬레이션 ====================
 
-// ekSimulate 무작위 합법 수로 한 판을 끝까지 돌린다. 교착·무한 노프 루프가
+// ekSimulate 무작위 합법 수로 한 판을 끝까지 돌린다. 교착·무한 아뇨 루프가
 // 있으면 스텝 상한에 걸려 실패한다. 소요 차례 수를 돌려준다.
 func ekSimulate(t *testing.T, n int, rng *rand.Rand) (turns int, winner int) {
 	t.Helper()
@@ -751,7 +751,7 @@ func ekSimPlay(g *EKGame, seat int, rng *rand.Rand) bool {
 	return g.Play(seat, i, target, rng) == nil
 }
 
-// ekSimNopeWindow 응답자들이 25% 확률로 노프를 겹치고 나머지는 통과한다
+// ekSimNopeWindow 응답자들이 25% 확률로 아뇨를 겹치고 나머지는 통과한다
 func ekSimNopeWindow(g *EKGame, rng *rand.Rand) {
 	for _, seat := range g.nopeResponders() {
 		if g.Players[seat].HasCard(EKCardNope) >= 0 && rng.Float64() < 0.25 {
@@ -767,7 +767,7 @@ func ekSimNopeWindow(g *EKGame, rng *rand.Rand) {
 	}
 }
 
-// TestEKRandomPlayAlwaysEnds 인원별 무작위 대국 완주 — 노프를 마구 겹쳐도
+// TestEKRandomPlayAlwaysEnds 인원별 무작위 대국 완주 — 아뇨를 마구 겹쳐도
 // 카드가 유한해 창이 닫히고, 폭탄이 인원-1 장이라 반드시 1명만 남는다.
 func TestEKRandomPlayAlwaysEnds(t *testing.T) {
 	rng := ekRNG()

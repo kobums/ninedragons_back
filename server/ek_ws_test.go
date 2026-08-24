@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// 테스트에서는 대기 상태 마감을 짧게 낮춘다 (자동 뽑기·노프 창 통과·
-// 무작위 부탁·무작위 되꽂기)
+// 테스트에서는 대기 상태 마감을 짧게 낮춘다 (자동 뽑기·아뇨 창 통과·
+// 무작위 호의·무작위 되꽂기)
 func init() {
 	ekTurnTimeout = 250 * time.Millisecond
 	ekNopeTimeout = 50 * time.Millisecond
@@ -154,7 +154,7 @@ func ekRunBotGame(t *testing.T, url string, limit time.Duration) (int, int) {
 }
 
 // TestEKFourBotsCompleteGame 봇을 채운 4인 게임이 60초 안에 완주하는지 —
-// 가장 중요한 회귀 장치 (노프 창 교착·차례 미전환·종료 판정 감지).
+// 가장 중요한 회귀 장치 (아뇨 창 교착·차례 미전환·종료 판정 감지).
 // 폭탄이 인원-1 장이라 반드시 1명만 남는다.
 func TestEKFourBotsCompleteGame(t *testing.T) {
 	_, url, cleanup := newEKTestServer(t, defaultDisconnectGrace)
@@ -168,7 +168,7 @@ func TestEKFourBotsCompleteGame(t *testing.T) {
 	}
 }
 
-// TestEKBotQuality 4봇 30판의 완주율·평균 소요 차례 수 — 무한 노프 루프나
+// TestEKBotQuality 4봇 30판의 완주율·평균 소요 차례 수 — 무한 아뇨 루프나
 // 교착이 없는지를 숫자로 고정한다.
 func TestEKBotQuality(t *testing.T) {
 	if testing.Short() {
@@ -259,7 +259,7 @@ func ekDrain(t *testing.T, c *EKClient) []string {
 // 결정적으로 검증한다.
 //   - yourHand 는 본인 스냅샷에만. 타인·관전자의 raw JSON 에는 키 자체가 없다.
 //   - 덱 내용과 폭탄 위치는 어떤 스냅샷에도 실리지 않는다 (deckLeft 만).
-//   - ek_future 는 예지를 쓴 사람에게만 간다.
+//   - ek_future 는 미래 예측를 쓴 사람에게만 간다.
 func TestEKHiddenState(t *testing.T) {
 	h, room, clients := ekHubRoom(t, 3)
 	game := room.Game
@@ -357,32 +357,32 @@ func TestEKHiddenState(t *testing.T) {
 	h.handleGameMessage(EKGameMessage{Client: clients[0], Message: EKMessage{
 		Type: EKMsgPlay, Payload: EKPlayPayload{Index: 0}}})
 	if game.Phase != EKPhaseNopeWindow {
-		t.Fatalf("예지를 냈는데 phase=%s", game.Phase)
+		t.Fatalf("미래 예측를 냈는데 phase=%s", game.Phase)
 	}
 	h.handleGameMessage(EKGameMessage{Client: clients[1], Message: EKMessage{Type: EKMsgPass}})
 	h.handleGameMessage(EKGameMessage{Client: clients[2], Message: EKMessage{Type: EKMsgPass}})
 	if game.Phase != EKPhaseTurn || game.CurrentSeat != 0 {
-		t.Fatalf("예지 후 phase=%s current=%d", game.Phase, game.CurrentSeat)
+		t.Fatalf("미래 예측 후 phase=%s current=%d", game.Phase, game.CurrentSeat)
 	}
 
 	got0 := strings.Join(ekDrain(t, clients[0]), "\n")
 	if !strings.Contains(got0, `"type":"ek_future"`) {
-		t.Fatalf("예지 결과가 본인에게 오지 않았다:\n%s", got0)
+		t.Fatalf("미래 예측 결과가 본인에게 오지 않았다:\n%s", got0)
 	}
 	if !strings.Contains(got0, `"cards":["bomb","skip","attack"]`) {
-		t.Fatalf("예지 결과 내용 이상:\n%s", got0)
+		t.Fatalf("미래 예측 결과 내용 이상:\n%s", got0)
 	}
 	for i := 1; i < 3; i++ {
 		got := strings.Join(ekDrain(t, clients[i]), "\n")
 		if strings.Contains(got, "ek_future") || strings.Contains(got, "bomb") {
-			t.Fatalf("seat%d 에게 예지 결과가 샜다:\n%s", i, got)
+			t.Fatalf("seat%d 에게 미래 예측 결과가 샜다:\n%s", i, got)
 		}
 	}
 }
 
-// TestEKNopeWindowStateMachine 노프 창 상태기계 — 쿠(cp_hub)와 같은
+// TestEKNopeWindowStateMachine 아뇨 창 상태기계 — 쿠(cp_hub)와 같은
 // StateSeq/DeadlineSeq/AfkSeq 관리. 통과가 쌓이는 동안에는 마감이 늘어나지
-// 않고, 노프가 겹치면 창이 새로 열려 마감이 다시 걸린다.
+// 않고, 아뇨가 겹치면 창이 새로 열려 마감이 다시 걸린다.
 func TestEKNopeWindowStateMachine(t *testing.T) {
 	h, room, clients := ekHubRoom(t, 3)
 	game := room.Game
@@ -403,7 +403,7 @@ func TestEKNopeWindowStateMachine(t *testing.T) {
 			game.Phase, room.DeadlineSeq, game.StateSeq)
 	}
 	if game.Deadline <= 0 {
-		t.Fatal("노프 창 스냅샷의 endsAt(Deadline) 부재")
+		t.Fatal("아뇨 창 스냅샷의 endsAt(Deadline) 부재")
 	}
 	afk1, seq1, ends1 := game.AfkSeq, game.StateSeq, game.Deadline
 
@@ -416,13 +416,13 @@ func TestEKNopeWindowStateMachine(t *testing.T) {
 		t.Fatalf("통과가 마감을 갱신했다: afk=%d seq=%d ends=%d", game.AfkSeq, game.StateSeq, game.Deadline)
 	}
 
-	// 노프 겹치기 — 창이 새로 열려 마감이 다시 걸린다
+	// 아뇨 겹치기 — 창이 새로 열려 마감이 다시 걸린다
 	play(clients[2], EKMessage{Type: EKMsgNope})
 	if game.Pending == nil || game.Pending.NopeCount != 1 {
-		t.Fatalf("노프 반영 실패: %+v", game.Pending)
+		t.Fatalf("아뇨 반영 실패: %+v", game.Pending)
 	}
 	if game.StateSeq <= seq1 || game.AfkSeq <= afk1 || room.DeadlineSeq != game.StateSeq {
-		t.Fatalf("노프 후 창 재개방 실패: seq=%d afk=%d deadlineSeq=%d",
+		t.Fatalf("아뇨 후 창 재개방 실패: seq=%d afk=%d deadlineSeq=%d",
 			game.StateSeq, game.AfkSeq, room.DeadlineSeq)
 	}
 	// 앞 창의 통과 기록은 초기화된다 — seat1 이 다시 응답해야 한다
@@ -435,7 +435,7 @@ func TestEKNopeWindowStateMachine(t *testing.T) {
 		t.Fatalf("2겹 실패: %+v", game.Pending)
 	}
 
-	// 마지막 노프 좌석(seat1)을 뺀 전원 통과 → 짝수 겹이므로 건너뛰기 발동
+	// 마지막 아뇨 좌석(seat1)을 뺀 전원 통과 → 짝수 겹이므로 건너뛰기 발동
 	play(clients[0], EKMessage{Type: EKMsgPass})
 	play(clients[2], EKMessage{Type: EKMsgPass})
 	if game.Phase != EKPhaseTurn || game.CurrentSeat != 1 {
@@ -444,12 +444,12 @@ func TestEKNopeWindowStateMachine(t *testing.T) {
 	if game.Pending != nil {
 		t.Fatalf("판정 후 pending 잔존: %+v", game.Pending)
 	}
-	// 창이 닫힌 뒤의 뒤늦은 노프·통과는 조용히 무시된다 (에러가 아니다)
+	// 창이 닫힌 뒤의 뒤늦은 아뇨·통과는 조용히 무시된다 (에러가 아니다)
 	ekDrain(t, clients[0])
 	h.handleGameMessage(EKGameMessage{Client: clients[0], Message: EKMessage{Type: EKMsgNope}})
 	h.handleGameMessage(EKGameMessage{Client: clients[2], Message: EKMessage{Type: EKMsgPass}})
 	if got := strings.Join(ekDrain(t, clients[0]), "\n"); strings.Contains(got, "ek_error") {
-		t.Fatalf("뒤늦은 노프가 에러를 냈다:\n%s", got)
+		t.Fatalf("뒤늦은 아뇨가 에러를 냈다:\n%s", got)
 	}
 	if game.Phase != EKPhaseTurn || game.CurrentSeat != 1 {
 		t.Fatalf("뒤늦은 응답이 상태를 흔들었다: phase=%s current=%d", game.Phase, game.CurrentSeat)

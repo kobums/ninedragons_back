@@ -6,14 +6,14 @@ import "time"
 //
 // 2~5인 탈락형 카드 소품. 폭탄 고양이는 인원-1 장이라 반드시 마지막 1명이
 // 남는다. 자기 차례에 카드를 원하는 만큼 냈다가 마지막에 1장 뽑으면 차례가
-// 끝나고, 뽑은 카드가 폭탄이면 디퓨즈로 막고 덱 아무 위치에나 비공개로
-// 되꽂는다 — 디퓨즈가 없으면 탈락(방을 나가지 않고 관전으로 전환)이다.
+// 끝나고, 뽑은 카드가 폭탄이면 해체로 막고 덱 아무 위치에나 비공개로
+// 되꽂는다 — 해체가 없으면 탈락(방을 나가지 않고 관전으로 전환)이다.
 //
-// 계약의 심장은 **노프 창**이다. 기능 카드가 나오면 nope_window 로 전환해
-// 5초 동안 노프를 받고, 노프가 나오면 창을 다시 연다(재노프 무제한). 창
+// 계약의 심장은 **아뇨 창**이다. 기능 카드가 나오면 nope_window 로 전환해
+// 5초 동안 아뇨를 받고, 아뇨가 나오면 창을 다시 연다(재아뇨 무제한). 창
 // 상태는 쿠(cp_hub.go)와 똑같이 StateSeq/DeadlineSeq/AfkSeq 로 관리한다 —
-// 노프가 겹칠 때마다 StateSeq 가 올라 마감이 새로 걸리고, 통과 누적만으로는
-// 마감이 늘어나지 않는다. 노프 카드는 유한하므로 창은 반드시 닫힌다.
+// 아뇨가 겹칠 때마다 StateSeq 가 올라 마감이 새로 걸리고, 통과 누적만으로는
+// 마감이 늘어나지 않는다. 아뇨 카드는 유한하므로 창은 반드시 닫힌다.
 
 const (
 	EKMinPlayers = 2
@@ -22,13 +22,13 @@ const (
 	// EKFillBotTarget ek_fill_bots 가 채우는 목표 인원 — 채운 뒤 즉시 시작
 	EKFillBotTarget = 4
 
-	// EKStartHand 시작 손패 중 디퓨즈 1장을 뺀 나머지 장수
+	// EKStartHand 시작 손패 중 해체 1장을 뺀 나머지 장수
 	EKStartHand = 7
 
-	// EKDefuseTotal 디퓨즈 총 장수 — 1인 1장씩 나눠 주고 남는 건 덱에 섞는다
+	// EKDefuseTotal 해체 총 장수 — 1인 1장씩 나눠 주고 남는 건 덱에 섞는다
 	EKDefuseTotal = 6
 
-	// EKFutureCount 예지가 들여다보는 덱 맨 위 장수
+	// EKFutureCount 미래 예측가 들여다보는 덱 맨 위 장수
 	EKFutureCount = 3
 
 	// EKPairSize 고양이 훔치기에 필요한 같은 종류 장수
@@ -62,8 +62,8 @@ const EKPendKindPair = "pair"
 // ekCatCards 고양이 5종
 var ekCatCards = []EKCard{EKCardTaco, EKCardRainbow, EKCardBeard, EKCardPotato, EKCardMelon}
 
-// ekBaseCounts 폭탄·디퓨즈를 뺀 기본 덱 구성 (합 46장).
-// 시작 손패 7장씩은 여기서 나눠 주고, 그 뒤 폭탄 n-1 장과 남은 디퓨즈
+// ekBaseCounts 폭탄·해체를 뺀 기본 덱 구성 (합 46장).
+// 시작 손패 7장씩은 여기서 나눠 주고, 그 뒤 폭탄 n-1 장과 남은 해체
 // 6-n 장을 덱에 섞는다.
 var ekBaseCounts = []struct {
 	Card EKCard
@@ -98,29 +98,29 @@ func ekCardName(c EKCard) string {
 	case EKCardBomb:
 		return "폭탄 고양이"
 	case EKCardDefuse:
-		return "디퓨즈"
+		return "해체"
 	case EKCardAttack:
 		return "공격"
 	case EKCardSkip:
 		return "건너뛰기"
 	case EKCardFavor:
-		return "부탁"
+		return "호의"
 	case EKCardShuffle:
-		return "셔플"
+		return "섞기"
 	case EKCardFuture:
-		return "예지"
+		return "미래 예측"
 	case EKCardNope:
-		return "노프"
+		return "아뇨"
 	case EKCardTaco:
-		return "타코 고양이"
+		return "타코냥이"
 	case EKCardRainbow:
-		return "무지개 고양이"
+		return "무지개냥이"
 	case EKCardBeard:
-		return "수염 고양이"
+		return "수염냥이"
 	case EKCardPotato:
-		return "감자 고양이"
+		return "털감자냥이"
 	case EKCardMelon:
-		return "멜론 고양이"
+		return "수박냥이"
 	}
 	return string(c)
 }
@@ -139,9 +139,9 @@ type EKPhase string
 const (
 	EKPhaseWaiting     EKPhase = "waiting"
 	EKPhaseTurn        EKPhase = "turn"         // 차례 — 카드를 내거나 뽑는다
-	EKPhaseNopeWindow  EKPhase = "nope_window"  // 낸 카드에 노프를 받는 창
-	EKPhaseFavorWait   EKPhase = "favor_wait"   // 부탁 대상이 줄 카드를 고르는 중
-	EKPhaseDefusePlace EKPhase = "defuse_place" // 디퓨즈로 막은 폭탄을 되꽂는 중
+	EKPhaseNopeWindow  EKPhase = "nope_window"  // 낸 카드에 아뇨를 받는 창
+	EKPhaseFavorWait   EKPhase = "favor_wait"   // 호의 대상이 줄 카드를 고르는 중
+	EKPhaseDefusePlace EKPhase = "defuse_place" // 해체로 막은 폭탄을 되꽂는 중
 	EKPhaseGameOver    EKPhase = "game_over"
 )
 
@@ -195,7 +195,7 @@ func (p *EKPlayer) HasCard(c EKCard) int {
 	return -1
 }
 
-// EKPending 노프 창(과 그 뒤로 이어지는 대기 상태)의 진행 상태.
+// EKPending 아뇨 창(과 그 뒤로 이어지는 대기 상태)의 진행 상태.
 //
 //	nope_window   — 낸 카드/짝의 효과가 발동 대기 중. NopeCount 가 짝수면 유효.
 //	favor_wait    — Kind="favor", TargetSeat 이 줄 카드를 고르는 중.
@@ -204,13 +204,13 @@ type EKPending struct {
 	Kind       string // 카드 종류 또는 "pair"
 	BySeat     int    // 카드를 낸 좌석
 	TargetSeat int    // -1 없음
-	NopeCount  int    // 겹친 노프 수 — 짝수면 효과 유효
+	NopeCount  int    // 겹친 아뇨 수 — 짝수면 효과 유효
 
 	// LastSeat 가장 최근에 카드를 낸 좌석 — 이 좌석은 자기 카드에
-	// 노프를 겹칠 수 없다 (현재 창의 응답자에서 제외된다)
+	// 아뇨를 겹칠 수 없다 (현재 창의 응답자에서 제외된다)
 	LastSeat int
 
-	// passed 현재 창에서 통과(ek_pass)를 누른 좌석. 노프가 나오면 비워
+	// passed 현재 창에서 통과(ek_pass)를 누른 좌석. 아뇨가 나오면 비워
 	// 창을 처음부터 다시 연다.
 	passed map[int]bool
 }
@@ -223,7 +223,7 @@ type EKGameEvent struct {
 	Message string
 }
 
-// EKPrivateEvent 예지 결과 — 그 좌석에게만 ek_future 로 간다.
+// EKPrivateEvent 미래 예측 결과 — 그 좌석에게만 ek_future 로 간다.
 // 절대 방송하지 않는다 (덱 내용 은닉의 유일한 예외 경로).
 type EKPrivateEvent struct {
 	Seat  int
@@ -244,7 +244,7 @@ type EKGame struct {
 	CurrentSeat int // 차례 좌석 (창 동안에도 유지, -1 없음)
 	TurnsLeft   int // 현재 좌석이 남긴 차례 수 (공격 누적 — 현재 차례 포함)
 
-	Pending *EKPending // 노프 창·부탁 대기·되꽂기 대기 (그 외 nil)
+	Pending *EKPending // 아뇨 창·호의 대기·되꽂기 대기 (그 외 nil)
 
 	WinnerSeat int // 최후 1인 (-1 미정)
 	Ready      bool
@@ -252,7 +252,7 @@ type EKGame struct {
 
 	LastAction *EKLastActionView // 마지막 행동 요약 (스냅샷 lastAction)
 
-	// StateSeq 응답 대기 상태(차례·노프 창·부탁·되꽂기)가 새로 열릴 때마다
+	// StateSeq 응답 대기 상태(차례·아뇨 창·호의·되꽂기)가 새로 열릴 때마다
 	// +1 — 허브가 마감 타이머를 다시 걸지 판단하는 근거 (cp 와 동일)
 	StateSeq int
 	// AfkSeq 마감 타이머 일련번호 (뒤늦은 발화 무시용 — 허브가 관리)
@@ -303,7 +303,7 @@ type EKPlayPairPayload struct {
 	TargetSeat *int  `json:"targetSeat,omitempty"`
 }
 
-// EKGivePayload 부탁 대상이 건넬 카드 — index 는 yourHand 기준
+// EKGivePayload 호의 대상이 건넬 카드 — index 는 yourHand 기준
 type EKGivePayload struct {
 	Index int `json:"index"`
 }
@@ -331,7 +331,7 @@ type EKPlayerView struct {
 	Alive     bool   `json:"alive"`
 }
 
-// EKPendingView 노프 창 대상 요약 (전원 공통 — 무엇을 냈는지는 공개 정보다).
+// EKPendingView 아뇨 창 대상 요약 (전원 공통 — 무엇을 냈는지는 공개 정보다).
 // favor_wait·defuse_place 동안에는 응답해야 하는 좌석을 알리는 데 쓰인다.
 type EKPendingView struct {
 	Kind       string `json:"kind"`
@@ -366,7 +366,7 @@ type EKResultView struct {
 //   - YourHand 는 본인에게만 실린다. 포인터라 타인·관전자의 raw JSON 에는
 //     키 자체가 없다 (본인이 빈손이면 null 이 아니라 []).
 //   - 덱 내용과 폭탄 위치는 어디에도 없다 — deckLeft 장수만 공개된다.
-//   - 예지 결과는 이 스냅샷이 아니라 ek_future 개인 메시지로만 간다.
+//   - 미래 예측 결과는 이 스냅샷이 아니라 ek_future 개인 메시지로만 간다.
 type EKGameStatePayload struct {
 	GameID   string  `json:"gameId"`
 	RoomCode string  `json:"roomCode"`
@@ -398,7 +398,7 @@ type EKEventPayload struct {
 	Message string `json:"message"`
 }
 
-// EKFuturePayload 예지 결과 — 덱 맨 위부터 최대 3장. 그 사람에게만 간다.
+// EKFuturePayload 미래 예측 결과 — 덱 맨 위부터 최대 3장. 그 사람에게만 간다.
 type EKFuturePayload struct {
 	Cards []string `json:"cards"`
 }
