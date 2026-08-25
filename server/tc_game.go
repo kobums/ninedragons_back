@@ -880,7 +880,7 @@ func (g *TCGame) SetTarget(target int) error {
 	return nil
 }
 
-// StartHand 새 핸드 시작: 셔플·배분 후 그랜드 선언 단계로
+// StartHand 새 핸드 시작: 셔플·배분 후 라지티츄 선언 단계로
 func (g *TCGame) StartHand(rng *rand.Rand) {
 	if !g.Started {
 		g.Started = true
@@ -913,10 +913,10 @@ func (g *TCGame) StartHand(rng *rand.Rand) {
 	}
 }
 
-// CallGrand 그랜드 티츄 선언 or 패스. 전원 응답 시 교환 단계로 넘어간다.
+// CallGrand 라지티츄 선언 or 패스. 전원 응답 시 교환 단계로 넘어간다.
 func (g *TCGame) CallGrand(seat int, call bool) (allAnswered bool, err error) {
 	if g.Phase != TCPhaseGrand {
-		return false, errors.New("그랜드 선언 단계가 아닙니다")
+		return false, errors.New("라지티츄 선언 단계가 아닙니다")
 	}
 	if g.GrandAnswered[seat] {
 		return false, errors.New("이미 응답했습니다")
@@ -937,7 +937,7 @@ func (g *TCGame) CallGrand(seat int, call bool) (allAnswered bool, err error) {
 // CallTichu 일반 티츄 선언 (교환 단계부터 첫 카드 내기 전까지)
 func (g *TCGame) CallTichu(seat int) error {
 	if g.Phase != TCPhaseExchange && g.Phase != TCPhasePlay {
-		return errors.New("지금은 티츄를 선언할 수 없습니다")
+		return errors.New("지금은 스몰티츄를 선언할 수 없습니다")
 	}
 	if g.Tichu[seat] != "" {
 		return errors.New("이미 선언했습니다")
@@ -1301,16 +1301,16 @@ func (g *TCGame) finishHand() {
 		detail = fmt.Sprintf("카드점수 0·2팀 %d : 1·3팀 %d", p02, p13)
 	}
 
-	// 티츄/그랜드 보너스 (원투에도 적용)
+	// 스몰티츄/라지티츄 보너스 (원투에도 적용)
 	for s := 0; s < TCSeats; s++ {
 		if g.Tichu[s] == "" {
 			continue
 		}
 		bonus := 100
-		label := "티츄"
+		label := "스몰티츄"
 		if g.Tichu[s] == "grand" {
 			bonus = 200
-			label = "그랜드 티츄"
+			label = "라지티츄"
 		}
 		if g.OutRank[s] != 1 {
 			bonus = -bonus

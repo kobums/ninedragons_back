@@ -46,7 +46,7 @@ type tcAfkSignal struct {
 }
 
 // tcAfkTimeout 접속 유지 AFK 의 자동 진행 대기 시간.
-// 그랜드·교환·플레이 턴·용 전달 모두에 적용 — 한 명이 4인 게임을
+// 라지티츄·교환·플레이 턴·용 전달 모두에 적용 — 한 명이 4인 게임을
 // 영구히 볼모로 잡지 않게 한다 (끊긴 좌석의 90초 유예 봇 대체와 별개).
 var tcAfkTimeout = 90 * time.Second
 
@@ -484,7 +484,7 @@ func (h *TCHub) handleCallGrand(client *TCClient, msg TCMessage) {
 	if payload.Call {
 		seat := client.Seat
 		h.broadcastEvent(room, TCEventPayload{Kind: "grand", Seat: &seat,
-			Message: fmt.Sprintf("%s 그랜드 티츄 선언!", client.Name)})
+			Message: fmt.Sprintf("%s 라지티츄 선언!", client.Name)})
 	}
 	h.broadcastState(room)
 }
@@ -501,7 +501,7 @@ func (h *TCHub) handleCallTichu(client *TCClient) {
 	}
 	seat := client.Seat
 	h.broadcastEvent(room, TCEventPayload{Kind: "tichu", Seat: &seat,
-		Message: fmt.Sprintf("%s 티츄 선언!", client.Name)})
+		Message: fmt.Sprintf("%s 스몰티츄 선언!", client.Name)})
 	h.broadcastState(room)
 }
 
@@ -680,7 +680,7 @@ func (h *TCHub) buildTCState(room *tcRoom, viewerSeat int) TCGameStatePayload {
 		c := room.Clients[s]
 		handCount := len(g.Hands[s])
 		if g.Phase == TCPhaseGrand {
-			handCount = 8 // 나머지 6장은 그랜드 응답 후 배분
+			handCount = 8 // 나머지 6장은 라지티츄 응답 후 배분
 		} else if g.Phase == TCPhaseWaiting {
 			handCount = 0
 		}
@@ -761,7 +761,7 @@ func (h *TCHub) broadcastState(room *tcRoom) {
 }
 
 // resetAfkTimer 상태가 바뀔 때마다 AFK 타이머를 다시 건다.
-// 응답을 기다리는 단계(그랜드·교환·플레이)에서만 동작한다.
+// 응답을 기다리는 단계(라지티츄·교환·플레이)에서만 동작한다.
 func (h *TCHub) resetAfkTimer(room *tcRoom) {
 	room.AfkSeq++
 	if room.AfkTimer != nil {
