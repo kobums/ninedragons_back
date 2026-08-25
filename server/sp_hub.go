@@ -746,7 +746,7 @@ func (h *SPHub) finishGame(room *spRoom) {
 	}
 
 	res := game.Result
-	winnerLabel := "시민 승"
+	winnerLabel := "일반인 승"
 	if res.Winner == "spy" {
 		winnerLabel = "스파이 승"
 	}

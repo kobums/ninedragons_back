@@ -9,8 +9,8 @@ import (
 //
 // 연습용 — 무작위 합법 행동만 한다.
 //   - 배치: 첫 장은 무작위, 이후 차례에는 60% 추가 배치(무작위 카드)·
-//     40% 배팅(1~자기 더미 수). 손패가 없으면 무조건 배팅.
-//   - 배팅: 30% 레이즈(+1, 상한 내), 70% 패스.
+//     40% 베팅(1~자기 더미 수). 손패가 없으면 무조건 베팅.
+//   - 베팅: 30% 레이즈(+1, 상한 내), 70% 패스.
 //   - 뒤집기: 자기 더미(서버가 자동으로 먼저 뒤집음) 후 무작위 상대 더미.
 // 검증 규칙은 서버와 같은 sk_game.go 를 공유하므로 봇이 서버 검증에 걸리는
 // 수를 내지 않는다.
@@ -70,7 +70,7 @@ func (b *skBrain) act(state skBotState) *SKMessage {
 		if state.CurrentSeat != me {
 			return nil
 		}
-		// 턴제 파트 — 60% 추가 배치, 40%(또는 손패 소진 시) 배팅
+		// 턴제 파트 — 60% 추가 배치, 40%(또는 손패 소진 시) 베팅
 		if len(state.YourHand) > 0 && b.rng.Intn(10) < 6 {
 			return b.place(len(state.YourHand))
 		}
@@ -144,7 +144,7 @@ func (h *SKHub) spawnBot(room *skRoom, name string) *SKClient {
 }
 
 // takeoverBot 유예 만료 좌석을 이어받는 연습봇 — 이름·좌석·손패를 유지해
-// 진행 중인 배치·배팅·뒤집기가 그대로 이어진다
+// 진행 중인 배치·베팅·뒤집기가 그대로 이어진다
 func (h *SKHub) takeoverBot(room *skRoom, seat int, name string) *SKClient {
 	bot := &SKClient{wsClient: newBotWSClient(), Hub: h}
 	bot.Name = name

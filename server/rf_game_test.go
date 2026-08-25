@@ -267,7 +267,7 @@ func TestRFTreasuryAccumulates(t *testing.T) {
 	}
 
 	text := rfEventText(g)
-	if !strings.Contains(text, "국고") || !strings.Contains(text, "개종") {
+	if !strings.Contains(text, "피난처") || !strings.Contains(text, "개종") {
 		t.Fatalf("개종 이벤트 문구 부재:\n%s", text)
 	}
 }
@@ -384,7 +384,7 @@ func TestRFEmbezzleForcedCoup(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.call()
-			if err == nil || !strings.Contains(err.Error(), "쿠만") {
+			if err == nil || !strings.Contains(err.Error(), "쿠데타만") {
 				t.Fatalf("쿠 강제 미적용: %v", err)
 			}
 		})
@@ -587,7 +587,7 @@ func TestRFBlockAndBlockChallenge(t *testing.T) {
 	if g.Players[0].Chips != RFStartChips {
 		t.Fatalf("차단됐는데 원조를 받았다: chips=%d", g.Players[0].Chips)
 	}
-	if !strings.Contains(rfEventText(g), "차단이 통과") {
+	if !strings.Contains(rfEventText(g), "저지가 통과") {
 		t.Fatal("차단 통과 이벤트 부재")
 	}
 

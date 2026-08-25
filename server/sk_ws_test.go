@@ -162,7 +162,7 @@ func driveSK(c *skTestClient, brain *skBrain, deadline time.Time) skDriveResult 
 
 // TestSKSixBotsCompleteGame 6좌석 전부 봇 두뇌로 구동해 20초 안에 완주한다.
 // 실패가 카드를 줄이고(최대 24장) 성공이 점수를 쌓아 유한 종료 —
-// -count=3 으로 무작위 배치·배팅이 달라져도 회귀가 없음을 본다.
+// -count=3 으로 무작위 배치·베팅이 달라져도 회귀가 없음을 본다.
 func TestSKSixBotsCompleteGame(t *testing.T) {
 	_, url, cleanup := newSKTestServer(t, defaultDisconnectGrace)
 	defer cleanup()
@@ -360,7 +360,7 @@ func TestSKRoomCodeSpectate(t *testing.T) {
 	}
 }
 
-// TestSKAfkThreeStages AFK 3단계 회귀 — (1) 배팅 차례 방치는 자동 패스,
+// TestSKAfkThreeStages AFK 3단계 회귀 — (1) 베팅 차례 방치는 자동 패스,
 // (2) 뒤집기 방치는 무작위 더미 자동 뒤집기, (3) 배치 방치는 무작위 자동
 // 배치로 해소되어 접속만 유지한 좌석이 게임을 영구 정지시키지 못한다.
 func TestSKAfkThreeStages(t *testing.T) {
@@ -398,11 +398,11 @@ func TestSKAfkThreeStages(t *testing.T) {
 	turnRose(clients[2], 2)
 	turnRose(clients[0], 0)
 
-	// B 차례에 장미 5장 선언 → 배팅 단계로
+	// B 차례에 장미 5장 선언 → 베팅 단계로
 	clients[1].waitTurnState(t, SKPhasePlacing, func(cur int) bool { return cur == 1 })
 	clients[1].send(t, SKMessage{Type: SKMsgBid, Payload: SKBidPayload{Count: 5}})
 
-	// ---- 단계 1: 배팅 방치 → C·A 자동 패스 → B 가 도전자 ----
+	// ---- 단계 1: 베팅 방치 → C·A 자동 패스 → B 가 도전자 ----
 	flipping := clients[0].waitPhase(t, SKPhaseFlipping)
 	if flipping["endsAt"].(float64) <= 0 {
 		t.Fatalf("flipping endsAt = %v, want >0", flipping["endsAt"])

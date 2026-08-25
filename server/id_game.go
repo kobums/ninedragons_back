@@ -272,7 +272,7 @@ func (g *IDGame) tally() {
 	if top == g.InsiderSeat {
 		winner = "citizens"
 		g.EndReason = "insider_caught"
-		msg = fmt.Sprintf("최다 득표 — %s님 (%d표). 인사이더 적발! 시민과 마스터의 승리입니다",
+		msg = fmt.Sprintf("최다 득표 — %s님 (%d표). 인사이더 적발! 일반인과 마스터의 승리입니다",
 			topPlayer.Name, topPlayer.Votes)
 	} else {
 		winner = "insider"

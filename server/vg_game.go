@@ -268,7 +268,7 @@ func (g *VGGame) settleRound() {
 	parts := []string{}
 	for _, p := range g.Players {
 		p.Cash += gains[p.Seat]
-		parts = append(parts, fmt.Sprintf("%s +%d만", p.Name, gains[p.Seat]))
+		parts = append(parts, fmt.Sprintf("%s +%d만 달러", p.Name, gains[p.Seat]))
 	}
 	g.RoundResult = &VGRoundResult{
 		Message: fmt.Sprintf("%d라운드 정산 — %s", g.Round, strings.Join(parts, ", ")),

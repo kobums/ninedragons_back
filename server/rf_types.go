@@ -64,7 +64,7 @@ func rfRoleName(r RFRole) string {
 	case RFRoleAmbassador:
 		return "대사"
 	case RFRoleContessa:
-		return "백작부인"
+		return "백작 부인"
 	}
 	return string(r)
 }
@@ -117,23 +117,23 @@ const (
 func rfActionName(k RFActionKind) string {
 	switch k {
 	case RFActIncome:
-		return "수입"
+		return "소득"
 	case RFActAid:
-		return "해외원조"
+		return "외부 원조"
 	case RFActCoup:
-		return "쿠"
+		return "쿠데타"
 	case RFActTax:
-		return "세금"
+		return "세금 징수"
 	case RFActAssassinate:
 		return "암살"
 	case RFActSteal:
-		return "강탈"
+		return "갈취"
 	case RFActExchange:
-		return "교환"
+		return "캐릭터 교환"
 	case RFActConvert:
-		return "진영 바꾸기"
+		return "개종"
 	case RFActConvertOther:
-		return "남의 진영 바꾸기"
+		return "다른 플레이어 개종"
 	case RFActEmbezzle:
 		return "횡령"
 	}

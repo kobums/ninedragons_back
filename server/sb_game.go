@@ -198,13 +198,13 @@ func sbCanPlace(board []*SBCell, tile SBCard, col, row int) error {
 // sbCanPlace 와 완전히 동일하다.
 func sbCanPlaceReach(board []*SBCell, reach map[int]bool, tile SBCard, col, row int) error {
 	if !sbIsTile(tile) {
-		return errors.New("길 타일이 아닙니다")
+		return errors.New("굴 카드가 아닙니다")
 	}
 	if !sbInBoard(col, row) {
 		return errors.New("판 밖의 좌표입니다")
 	}
 	if board[sbIdx(col, row)] != nil {
-		return errors.New("이미 타일이 놓인 칸입니다")
+		return errors.New("이미 카드가 놓인 칸입니다")
 	}
 
 	anchored := false
@@ -225,7 +225,7 @@ func sbCanPlaceReach(board []*SBCell, reach map[int]bool, tile SBCard, col, row 
 		mine := sbCardSide(tile, d)
 		theirs := sbCellSide(nb, sbOpp(d))
 		if mine != theirs {
-			return fmt.Errorf("%s쪽 이웃 타일과 통로가 맞지 않습니다", sbDirLabel(d))
+			return fmt.Errorf("%s쪽 이웃 카드와 통로가 맞지 않습니다", sbDirLabel(d))
 		}
 		// 막다른 타일은 내부가 막혀 있어 이어진 길의 끝이다 — 그 뒤로는 못 놓는다
 		if mine && !nb.Dead && reach[sbIdx(nc, nr)] {
@@ -233,7 +233,7 @@ func sbCanPlaceReach(board []*SBCell, reach map[int]bool, tile SBCard, col, row 
 		}
 	}
 	if !anchored {
-		return errors.New("시작 타일에서 이어진 길에 닿아야 합니다")
+		return errors.New("시작 카드에서 이어진 길에 닿아야 합니다")
 	}
 	return nil
 }
@@ -447,7 +447,7 @@ func (g *SBGame) endTurn() {
 		}
 	}
 	g.finishWith(string(SBRoleSaboteur), "exhausted",
-		"카드가 모두 떨어졌습니다 — 금맥에 닿지 못해 파괴꾼의 승리입니다")
+		"카드가 모두 떨어졌습니다 — 금맥에 닿지 못해 방해꾼의 승리입니다")
 }
 
 // ==================== 길 타일 배치 ====================
@@ -460,10 +460,10 @@ func (g *SBGame) Place(seat, index, col, row int, flip bool) error {
 	}
 	card := p.Hand[index]
 	if !sbIsTile(card) {
-		return errors.New("길 타일이 아닙니다")
+		return errors.New("굴 카드가 아닙니다")
 	}
 	if !p.Tools.sbToolsAllOK() {
-		return errors.New("장비가 망가져 길 타일을 놓을 수 없습니다")
+		return errors.New("도구가 부서져 굴 카드를 놓을 수 없습니다")
 	}
 	tile := card
 	if flip {
@@ -484,7 +484,7 @@ func (g *SBGame) Place(seat, index, col, row int, flip bool) error {
 	if tile.Dead {
 		shape = "막다른 길"
 	}
-	g.note(seat, "place", fmt.Sprintf("%s님이 (%d,%d)에 %s 타일을 놓았습니다",
+	g.note(seat, "place", fmt.Sprintf("%s님이 (%d,%d)에 %s 카드를 놓았습니다",
 		p.Name, col, row, shape))
 
 	g.revealTouchedGoals()
@@ -511,13 +511,13 @@ func (g *SBGame) revealTouchedGoals() {
 
 		if cell.Gold {
 			g.emit("goal_revealed", -1, fmt.Sprintf(
-				"(%d,%d) 목표 타일이 열렸습니다 — 금덩이입니다!", gc[0], gc[1]))
+				"(%d,%d) 목적지 카드가 열렸습니다 — 금덩이입니다!", gc[0], gc[1]))
 			g.finishWith(string(SBRoleMiner), "gold", fmt.Sprintf(
 				"(%d,%d)의 금맥에 길이 닿았습니다 — 광부의 승리입니다", gc[0], gc[1]))
 			return
 		}
 		g.emit("goal_revealed", -1, fmt.Sprintf(
-			"(%d,%d) 목표 타일이 열렸습니다 — 돌덩이입니다", gc[0], gc[1]))
+			"(%d,%d) 목적지 카드가 열렸습니다 — 돌덩이입니다", gc[0], gc[1]))
 	}
 }
 
@@ -564,16 +564,16 @@ func (g *SBGame) playMap(p *SBPlayer, req SBActionPayload) error {
 	}
 	cell := g.Board[sbIdx(req.Col, req.Row)]
 	if cell == nil || cell.Kind != SBTileGoal {
-		return errors.New("목표 타일만 들여다볼 수 있습니다")
+		return errors.New("목적지 카드만 들여다볼 수 있습니다")
 	}
 	if cell.Revealed {
-		return errors.New("이미 공개된 목표 타일입니다")
+		return errors.New("이미 공개된 목적지 카드입니다")
 	}
 	// 결과는 방송하지 않는다 — 허브가 이 좌석에만 sb_map 으로 보낸다
 	g.privates = append(g.privates, SBPrivate{
 		Seat: p.Seat, Index: cell.GoalIndex, Gold: cell.GoalIndex == g.GoldIndex,
 	})
-	g.note(p.Seat, "map", fmt.Sprintf("%s님이 (%d,%d) 목표 타일을 몰래 살펴봤습니다",
+	g.note(p.Seat, "map", fmt.Sprintf("%s님이 (%d,%d) 목적지 카드를 몰래 살펴봤습니다",
 		p.Name, req.Col, req.Row))
 	return nil
 }
@@ -585,13 +585,13 @@ func (g *SBGame) playRockfall(p *SBPlayer, req SBActionPayload) error {
 	}
 	cell := g.Board[sbIdx(req.Col, req.Row)]
 	if cell == nil {
-		return errors.New("걷어낼 타일이 없습니다")
+		return errors.New("걷어낼 카드가 없습니다")
 	}
 	if cell.Kind != SBTilePath {
-		return errors.New("시작·목표 타일은 걷어낼 수 없습니다")
+		return errors.New("시작·목적지 카드는 걷어낼 수 없습니다")
 	}
 	g.Board[sbIdx(req.Col, req.Row)] = nil
-	g.note(p.Seat, "rockfall", fmt.Sprintf("%s님이 (%d,%d)의 타일을 낙석으로 걷어냈습니다",
+	g.note(p.Seat, "rockfall", fmt.Sprintf("%s님이 (%d,%d)의 카드를 낙석으로 걷어냈습니다",
 		p.Name, req.Col, req.Row))
 	return nil
 }
@@ -605,7 +605,7 @@ func sbResolveTool(card SBCard, req SBActionPayload) (SBTool, error) {
 	if sbToolValid(req.Tool) {
 		return req.Tool, nil
 	}
-	return "", errors.New("장비를 지정해야 합니다")
+	return "", errors.New("도구를 지정해야 합니다")
 }
 
 // playBreak 장비 파괴 — 대상의 멀쩡한 장비 하나를 망가뜨린다

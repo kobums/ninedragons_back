@@ -113,7 +113,7 @@ func seBuildDeck() []SECard {
 	return deck
 }
 
-// seCardLabel 카드 한글 표기 ("빨강 채움 다이아 2") — 로그·문구용
+// seCardLabel 카드 한글 표기 ("빨강 채움 다이아몬드 2") — 로그·문구용
 func seCardLabel(c SECard) string {
 	return fmt.Sprintf("%s %s %s %d",
 		seColorLabel(c.Color), seFillLabel(c.Fill), seShapeLabel(c.Shape), c.Count)

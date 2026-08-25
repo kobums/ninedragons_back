@@ -24,7 +24,7 @@ func omOther(color OMColor) OMColor {
 
 const (
 	OMBoardSize = 15                        // 15×15 교차점
-	OMMaxMoves  = OMBoardSize * OMBoardSize // 225수 소진 시 무승부(만패)
+	OMMaxMoves  = OMBoardSize * OMBoardSize // 225수 소진 시 무승부 (판이 가득 참)
 )
 
 // OMPhase 게임 진행 단계 (내부용 — 와이어에는 싣지 않는다)

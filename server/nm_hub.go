@@ -437,7 +437,7 @@ func (h *NMHub) startGame(room *nmRoom) {
 	}
 
 	h.broadcastEvent(room, NMEventPayload{Kind: "game_started",
-		Message: fmt.Sprintf("게임 시작 — 총 %d트릭, 소머리를 가장 적게 먹으면 승리!", NMTricks)})
+		Message: fmt.Sprintf("게임 시작 — 총 %d라운드, 소머리를 가장 적게 먹으면 승리!", NMTricks)})
 	h.announceTrickBegin(room)
 	// 마감 시각을 먼저 세팅해야 첫 스냅샷에 endsAt 이 실린다
 	h.scheduleDeadline(room, nmAfkTimeout)
@@ -447,7 +447,7 @@ func (h *NMHub) startGame(room *nmRoom) {
 // announceTrickBegin 트릭 시작 발표 (동시 선택 안내)
 func (h *NMHub) announceTrickBegin(room *nmRoom) {
 	h.broadcastEvent(room, NMEventPayload{Kind: "trick_begin",
-		Message: fmt.Sprintf("%d번째 트릭 — 전원 카드 1장을 선택하세요", room.Game.Trick)})
+		Message: fmt.Sprintf("%d번째 라운드 — 전원 카드 1장을 선택하세요", room.Game.Trick)})
 }
 
 // removeFromLobby 대기실에서 좌석을 비우고 남은 좌석을 앞으로 당긴다

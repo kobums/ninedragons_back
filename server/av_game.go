@@ -190,7 +190,7 @@ func (g *AVGame) SubmitPick(seat int, seats []int) error {
 		return errors.New("지금은 원정대 지명 시간이 아닙니다")
 	}
 	if seat != g.LeaderSeat {
-		return errors.New("리더만 원정대를 지명할 수 있습니다")
+		return errors.New("대표만 원정대를 지명할 수 있습니다")
 	}
 	size := g.CurrentQuestSize()
 	if len(seats) != size {
@@ -235,7 +235,7 @@ func (g *AVGame) AutoPick(rng *rand.Rand) []int {
 // 개별 표는 전원 제출 후 일괄 공개된다 — 해소 전에는 제출 여부만.
 func (g *AVGame) SubmitTeamVote(seat int, approve bool) error {
 	if g.Phase != AVPhaseTeamVote {
-		return errors.New("지금은 팀 투표 시간이 아닙니다")
+		return errors.New("지금은 원정대 투표 시간이 아닙니다")
 	}
 	if seat < 0 || seat >= len(g.Players) {
 		return errors.New("잘못된 좌석입니다")

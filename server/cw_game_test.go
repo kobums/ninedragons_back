@@ -111,7 +111,7 @@ func TestCWDeckAndDeal(t *testing.T) {
 				t.Fatalf("%d인 seat%d 손패 = %d장, want %d", n, i, len(p.Hand), want)
 			}
 			if p.TokenLeft != CWTokenPerMission || p.Revealed != nil {
-				t.Fatalf("%d인 seat%d 소통 상태 오염: token=%d revealed=%+v",
+				t.Fatalf("%d인 seat%d 통신 상태 오염: token=%d revealed=%+v",
 					n, i, p.TokenLeft, p.Revealed)
 			}
 			for _, c := range p.Hand {
@@ -157,7 +157,7 @@ func TestCWDeckAndDeal(t *testing.T) {
 		}
 	}
 
-	// 임무 단계가 오르면 임무 카드도 늘고 좌석에 골고루 배정된다
+	// 임무 단계가 오르면 과제 카드도 늘고 좌석에 골고루 배정된다
 	rng := rand.New(rand.NewSource(3))
 	empty := []*CWPlayer{
 		{Seat: 0, Hand: []CWCard{}}, {Seat: 1, Hand: []CWCard{}},
@@ -176,7 +176,7 @@ func TestCWDeckAndDeal(t *testing.T) {
 	}
 }
 
-// TestCWTaskNotSelfHeldLowCard 낮은 임무 카드는 그 카드를 쥔 사람에게 맡기지
+// TestCWTaskNotSelfHeldLowCard 낮은 과제 카드는 그 카드를 쥔 사람에게 맡기지
 // 않는다 — 자기가 낸 카드로 그 트릭을 이겨야 해서 사실상 불가능하기 때문이다.
 func TestCWTaskNotSelfHeldLowCard(t *testing.T) {
 	for seed := int64(0); seed < 200; seed++ {
@@ -319,7 +319,7 @@ func TestCWTrickWinnerTable(t *testing.T) {
 	}
 }
 
-// TestCWTaskSuccess 임무 카드를 담당자가 가져가면 완료 — 마지막 임무 카드를
+// TestCWTaskSuccess 과제 카드를 담당자가 가져가면 완료 — 마지막 과제 카드를
 // 마치면 다음 임무 단계로 넘어간다 (round_end → NextMission).
 func TestCWTaskSuccess(t *testing.T) {
 	g, rng := cwNewTestGame(t, 3)
@@ -341,11 +341,11 @@ func TestCWTaskSuccess(t *testing.T) {
 		t.Fatalf("중간 임무 성공에 result 가 실렸다: %+v", g.Result)
 	}
 	text := cwEventText(g)
-	if !strings.Contains(text, "임무 완료") || !strings.Contains(text, "성공") {
+	if !strings.Contains(text, "과제 완료") || !strings.Contains(text, "성공") {
 		t.Fatalf("임무 성공 이벤트 문구 = %q", text)
 	}
 
-	// 다음 임무 — 임무 카드가 하나 늘고 40장이 다시 배분된다
+	// 다음 임무 — 과제 카드가 하나 늘고 40장이 다시 배분된다
 	g.NextMission(rng)
 	if g.Mission != 2 || len(g.Tasks) != 2 || g.Phase != CWPhasePlaying {
 		t.Fatalf("다음 임무 상태: mission=%d tasks=%d phase=%s",
@@ -356,7 +356,7 @@ func TestCWTaskSuccess(t *testing.T) {
 	}
 	for _, p := range g.Players {
 		if p.TokenLeft != CWTokenPerMission || p.Revealed != nil {
-			t.Fatalf("seat%d 소통 토큰 미초기화: token=%d revealed=%+v",
+			t.Fatalf("seat%d 통신 토큰 미초기화: token=%d revealed=%+v",
 				p.Seat, p.TokenLeft, p.Revealed)
 		}
 	}
@@ -372,7 +372,7 @@ func TestCWTaskSuccess(t *testing.T) {
 	}
 }
 
-// TestCWTaskWrongWinner 임무 카드를 담당자가 아닌 사람이 가져가면 즉시 실패
+// TestCWTaskWrongWinner 과제 카드를 담당자가 아닌 사람이 가져가면 즉시 실패
 func TestCWTaskWrongWinner(t *testing.T) {
 	g, _ := cwNewTestGame(t, 3)
 	g.Tasks = []CWTask{{Suit: CWSuitBlue, Rank: 5, Seat: 2}}
@@ -404,7 +404,7 @@ func TestCWTaskWrongWinner(t *testing.T) {
 		t.Fatal("종료 뒤 제출이 허용됐다")
 	}
 	if err := g.Communicate(0, 0, CWHintOnly); err == nil {
-		t.Fatal("종료 뒤 소통이 허용됐다")
+		t.Fatal("종료 뒤 통신이 허용됐다")
 	}
 }
 
@@ -483,7 +483,7 @@ func TestCWUnevenDeal(t *testing.T) {
 	}
 }
 
-// TestCWCommunicateValidation 소통 검증 — 색 숫자 카드만, 로켓 불가,
+// TestCWCommunicateValidation 통신 검증 — 색 숫자 카드만, 로켓 불가,
 // 선언이 실제로 참이어야 하고, 토큰은 1회, 트릭 시작 시점에만.
 func TestCWCommunicateValidation(t *testing.T) {
 	g, _ := cwNewTestGame(t, 3)
@@ -523,7 +523,7 @@ func TestCWCommunicateValidation(t *testing.T) {
 		t.Fatal("범위 밖 인덱스가 허용됐다")
 	}
 	if g.Players[0].Revealed != nil || g.Players[0].TokenLeft != CWTokenPerMission {
-		t.Fatalf("거부된 소통이 상태를 바꿨다: %+v", g.Players[0])
+		t.Fatalf("거부된 통신이 상태를 바꿨다: %+v", g.Players[0])
 	}
 
 	// 참인 선언 — 카드는 손에 남고 전원이 본다
@@ -541,13 +541,13 @@ func TestCWCommunicateValidation(t *testing.T) {
 	if g.Players[0].TokenLeft != 0 {
 		t.Fatalf("토큰이 안 줄었다: %d", g.Players[0].TokenLeft)
 	}
-	if !strings.Contains(cwEventText(g), "소통") {
-		t.Fatal("소통 이벤트 부재")
+	if !strings.Contains(cwEventText(g), "통신") {
+		t.Fatal("통신 이벤트 부재")
 	}
 
 	// 토큰은 1회뿐
 	if err := g.Communicate(0, 1, CWHintHighest); err == nil {
-		t.Fatal("두 번째 소통이 허용됐다")
+		t.Fatal("두 번째 통신이 허용됐다")
 	}
 
 	// 참인 highest — seat1 은 파랑 9 한 장뿐이라 only 만 가능
@@ -558,14 +558,14 @@ func TestCWCommunicateValidation(t *testing.T) {
 		t.Fatalf("참인 only 가 거부됐다: %v", err)
 	}
 
-	// 트릭이 시작되면 소통 불가
+	// 트릭이 시작되면 통신 불가
 	if err := g.Play(0, 0); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
 	if err := g.Communicate(2, 0, CWHintOnly); err == nil {
-		t.Fatal("트릭 진행 중 소통이 허용됐다")
+		t.Fatal("트릭 진행 중 통신이 허용됐다")
 	} else if !strings.Contains(err.Error(), "트릭") {
-		t.Fatalf("트릭 중 소통 에러 문구 = %q", err.Error())
+		t.Fatalf("트릭 중 통신 에러 문구 = %q", err.Error())
 	}
 }
 
@@ -644,14 +644,14 @@ func TestCWForcePlay(t *testing.T) {
 	}
 }
 
-// TestCWBotPickPlay 봇 판단 — 자기 임무 카드는 이기려 하고 남의 임무 카드는
+// TestCWBotPickPlay 봇 판단 — 자기 과제 카드는 이기려 하고 남의 과제 카드는
 // 일부러 흘린다 (전부 따라내기 의무 안에서).
 func TestCWBotPickPlay(t *testing.T) {
 	hand := []CWCard{
 		{Suit: CWSuitBlue, Rank: 2}, {Suit: CWSuitBlue, Rank: 8}, {Suit: CWSuitGreen, Rank: 9},
 	}
 
-	// 트릭에 자기 임무 카드(파랑 4)가 있으면 이길 수 있는 최소 카드를 낸다
+	// 트릭에 자기 과제 카드(파랑 4)가 있으면 이길 수 있는 최소 카드를 낸다
 	mine := cwBotState{
 		YourSeat: 1, Phase: CWPhasePlaying, CurrentSeat: 1, LeadSuit: CWSuitBlue,
 		Trick:    []CWTrickCard{{Seat: 0, Card: CWCard{CWSuitBlue, 4}}},
@@ -659,10 +659,10 @@ func TestCWBotPickPlay(t *testing.T) {
 		YourHand: hand,
 	}
 	if got := cwBotPickPlay(mine); got != 1 {
-		t.Fatalf("자기 임무 카드를 안 가져간다: index=%d", got)
+		t.Fatalf("자기 과제 카드를 안 가져간다: index=%d", got)
 	}
 
-	// 남의 임무 카드면 지는 카드를 낸다
+	// 남의 과제 카드면 지는 카드를 낸다
 	others := mine
 	others.Tasks = []CWTask{{Suit: CWSuitBlue, Rank: 4, Seat: 2}}
 	if got := cwBotPickPlay(others); got != 0 {
@@ -684,7 +684,7 @@ func TestCWBotPickPlay(t *testing.T) {
 	}
 }
 
-// TestCWBotPickCommunicate 봇 소통 선택은 서버 검증을 항상 통과한다
+// TestCWBotPickCommunicate 봇 통신 선택은 서버 검증을 항상 통과한다
 func TestCWBotPickCommunicate(t *testing.T) {
 	hands := [][]CWCard{
 		{{Suit: CWSuitBlue, Rank: 2}, {Suit: CWSuitBlue, Rank: 8}, {Suit: CWSuitRocket, Rank: 1}},

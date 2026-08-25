@@ -230,7 +230,7 @@ func (g *JOGame) beginRound() {
 	g.Phase = JOPhaseClue
 	g.StateSeq++
 	g.emit("round_start", g.GuesserSeat, fmt.Sprintf(
-		"%d/%d 라운드 — %s님이 출제자입니다. 나머지는 제시어를 보고 단서 한 단어를 내세요",
+		"%d/%d 라운드 — %s님이 맞히는 사람입니다. 나머지는 제시어를 보고 단서 한 단어를 내세요",
 		g.Round, g.TotalRounds, g.Players[g.GuesserSeat].Name))
 }
 
@@ -265,7 +265,7 @@ func (g *JOGame) SubmitClue(seat int, text string) error {
 		return errors.New("잘못된 좌석입니다")
 	}
 	if seat == g.GuesserSeat {
-		return errors.New("출제자는 단서를 낼 수 없습니다")
+		return errors.New("맞히는 사람은 단서를 낼 수 없습니다")
 	}
 	p := g.Players[seat]
 	if p.Submitted {
@@ -332,7 +332,7 @@ func (g *JOGame) SubmitGuess(seat int, text string) error {
 		return errors.New("지금은 답을 낼 수 없습니다")
 	}
 	if seat != g.GuesserSeat {
-		return errors.New("출제자만 답을 낼 수 있습니다")
+		return errors.New("맞히는 사람만 답을 낼 수 있습니다")
 	}
 	guess := strings.TrimSpace(text)
 	if guess == "" {
@@ -363,7 +363,7 @@ func (g *JOGame) Pass(seat int) error {
 		return errors.New("지금은 넘길 수 없습니다")
 	}
 	if seat != g.GuesserSeat {
-		return errors.New("출제자만 넘길 수 있습니다")
+		return errors.New("맞히는 사람만 넘길 수 있습니다")
 	}
 	g.Guess = ""
 	g.finishRound(false, false, 0, "넘어갔습니다 — 점수 변동 없음")
@@ -388,7 +388,7 @@ func (g *JOGame) Accept(seat int) error {
 		return errors.New("잘못된 좌석입니다")
 	}
 	if seat == g.GuesserSeat {
-		return errors.New("출제자는 자기 답을 인정할 수 없습니다")
+		return errors.New("맞히는 사람은 자기 답을 인정할 수 없습니다")
 	}
 	g.finishRound(true, true, 1, fmt.Sprintf("%s님이 정답으로 인정했습니다", g.Players[seat].Name))
 	return nil

@@ -660,7 +660,7 @@ func omEndReasonLabel(reason string) string {
 	case "five":
 		return "오목 완성"
 	case "draw":
-		return "만패 무승부"
+		return "무승부 (판이 가득 참)"
 	case "forfeit":
 		return "몰수"
 	}

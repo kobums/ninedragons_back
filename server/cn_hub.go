@@ -568,7 +568,7 @@ func (h *CNHub) handlePick(client *CNClient, msg CNMessage) {
 		message = fmt.Sprintf("%s님이 %q을(를) 선택 — %s 정답!",
 			client.Name, res.Word, cnTeamName(pickerTeam))
 	case res.Color == CNColorNeutral:
-		message = fmt.Sprintf("%s님이 %q을(를) 선택 — 중립 단어, 턴 종료",
+		message = fmt.Sprintf("%s님이 %q을(를) 선택 — 행인, 턴 종료",
 			client.Name, res.Word)
 	default: // 상대 팀 단어
 		message = fmt.Sprintf("%s님이 %q을(를) 선택 — %s입니다, 턴 종료",
@@ -671,7 +671,7 @@ func (h *CNHub) handleAfkFired(sig cnAfkSignal) {
 		log.Printf("[코드네임][자동진행] game=%s | %s 요원 무응답 — 턴 종료 처리",
 			game.ID, cnTeamName(team))
 		h.broadcastEvent(room, CNEventPayload{Kind: "afk",
-			Message: fmt.Sprintf("%s 요원들이 오래 응답하지 않아 턴을 넘깁니다 — %s 힌트 차례입니다",
+			Message: fmt.Sprintf("%s 팀원들이 오래 응답하지 않아 턴을 넘깁니다 — %s 힌트 차례입니다",
 				cnTeamName(team), cnTeamName(game.CurrentTeam))})
 		h.broadcastState(room)
 	}

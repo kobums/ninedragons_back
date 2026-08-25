@@ -9,7 +9,7 @@ import (
 
 // ==================== 스컬 순수 게임 로직 ====================
 //
-// 허브 비의존. 배치(동시 1장 → 턴제 추가 배치/배팅) → 배팅(레이즈/패스) →
+// 허브 비의존. 배치(동시 1장 → 턴제 추가 배치/베팅) → 베팅(레이즈/패스) →
 // 뒤집기(자기 더미 전부 → 상대 더미 선택) → 점수/제거/탈락 판정을 담당한다.
 // 봇(sk_bot.go)과 서버(sk_hub.go)가 같은 검증을 공유한다.
 
@@ -129,7 +129,7 @@ func (g *SKGame) nextAlive(seat int) int {
 	return seat
 }
 
-// nextBidder seat 다음의 배팅 차례 — 생존·비패스·최고 배팅자 제외 (-1 없음)
+// nextBidder seat 다음의 베팅 차례 — 생존·비패스·최고 베팅자 제외 (-1 없음)
 func (g *SKGame) nextBidder(seat int) int {
 	n := len(g.Players)
 	for i := 1; i <= n; i++ {
@@ -142,7 +142,7 @@ func (g *SKGame) nextBidder(seat int) int {
 	return -1
 }
 
-// TotalStacked 전체 배치 수 (배팅 상한)
+// TotalStacked 전체 배치 수 (베팅 상한)
 func (g *SKGame) TotalStacked() int {
 	n := 0
 	for _, p := range g.Players {
@@ -195,7 +195,7 @@ func (g *SKGame) SubmitPlace(seat, index int) error {
 		return errors.New("이미 카드를 내려놓았습니다")
 	}
 	if len(p.Hand) == 0 {
-		return errors.New("손패가 없습니다 — 배팅을 선언하세요")
+		return errors.New("손패가 없습니다 — 베팅을 선언하세요")
 	}
 	if index < 0 || index >= len(p.Hand) {
 		return errors.New("잘못된 카드입니다")
@@ -235,9 +235,9 @@ func (g *SKGame) AutoPlaceAll(rng *rand.Rand) {
 	}
 }
 
-// ==================== 배팅 ====================
+// ==================== 베팅 ====================
 
-// SubmitBid 배팅 선언 — 배치 턴에서는 첫 선언(1 이상), 배팅 단계에서는
+// SubmitBid 베팅 선언 — 배치 턴에서는 첫 선언(1 이상), 베팅 단계에서는
 // 레이즈(현재보다 큰 N). 상한은 전체 배치 수이며, 상한과 같으면 즉시 도전자.
 func (g *SKGame) SubmitBid(seat, count int, rng *rand.Rand) error {
 	if seat < 0 || seat >= len(g.Players) {
@@ -253,21 +253,21 @@ func (g *SKGame) SubmitBid(seat, count int, rng *rand.Rand) error {
 			return errors.New("당신의 차례가 아닙니다")
 		}
 		if count < 1 {
-			return errors.New("배팅은 1장 이상이어야 합니다")
+			return errors.New("베팅은 1장 이상이어야 합니다")
 		}
 	case SKPhaseBidding:
 		if g.CurrentSeat != seat {
 			return errors.New("당신의 차례가 아닙니다")
 		}
 		if count <= g.HighBid {
-			return fmt.Errorf("현재 배팅(%d장)보다 커야 합니다", g.HighBid)
+			return fmt.Errorf("현재 베팅(%d장)보다 커야 합니다", g.HighBid)
 		}
 	default:
-		return errors.New("지금은 배팅할 수 없습니다")
+		return errors.New("지금은 베팅할 수 없습니다")
 	}
 	total := g.TotalStacked()
 	if count > total {
-		return fmt.Errorf("배팅은 전체 배치 수(%d장)를 넘을 수 없습니다", total)
+		return fmt.Errorf("베팅은 전체 배치 수(%d장)를 넘을 수 없습니다", total)
 	}
 
 	g.Phase = SKPhaseBidding
@@ -282,7 +282,7 @@ func (g *SKGame) SubmitBid(seat, count int, rng *rand.Rand) error {
 	}
 	next := g.nextBidder(seat)
 	if next < 0 {
-		// 남은 배팅 참가자가 선언자뿐 — 즉시 도전자
+		// 남은 베팅 참가자가 선언자뿐 — 즉시 도전자
 		g.startChallenge(seat, rng)
 		return nil
 	}
@@ -290,10 +290,10 @@ func (g *SKGame) SubmitBid(seat, count int, rng *rand.Rand) error {
 	return nil
 }
 
-// SubmitPass 배팅 포기 — 한 명(선언자) 빼고 전부 패스하면 그가 도전자
+// SubmitPass 베팅 포기 — 한 명(선언자) 빼고 전부 패스하면 그가 도전자
 func (g *SKGame) SubmitPass(seat int, rng *rand.Rand) error {
 	if g.Phase != SKPhaseBidding {
-		return errors.New("지금은 배팅 단계가 아닙니다")
+		return errors.New("지금은 베팅 단계가 아닙니다")
 	}
 	if seat < 0 || seat >= len(g.Players) {
 		return errors.New("잘못된 좌석입니다")
@@ -306,7 +306,7 @@ func (g *SKGame) SubmitPass(seat int, rng *rand.Rand) error {
 		return errors.New("당신의 차례가 아닙니다")
 	}
 	if seat == g.HighBidderSeat {
-		return errors.New("최고 배팅자는 패스할 수 없습니다")
+		return errors.New("최고 베팅자는 패스할 수 없습니다")
 	}
 	p.Passed = true
 

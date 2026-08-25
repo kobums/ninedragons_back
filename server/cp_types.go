@@ -51,7 +51,7 @@ func cpRoleName(r CPRole) string {
 	case CPRoleAmbassador:
 		return "대사"
 	case CPRoleContessa:
-		return "백작부인"
+		return "백작 부인"
 	}
 	return string(r)
 }
@@ -73,19 +73,19 @@ const (
 func cpActionName(k CPActionKind) string {
 	switch k {
 	case CPActIncome:
-		return "수입"
+		return "소득"
 	case CPActAid:
-		return "해외원조"
+		return "외부 원조"
 	case CPActCoup:
-		return "쿠"
+		return "쿠데타"
 	case CPActTax:
-		return "세금"
+		return "세금 징수"
 	case CPActAssassinate:
 		return "암살"
 	case CPActSteal:
-		return "강탈"
+		return "갈취"
 	case CPActExchange:
-		return "교환"
+		return "캐릭터 교환"
 	}
 	return string(k)
 }

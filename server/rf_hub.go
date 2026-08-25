@@ -438,7 +438,7 @@ func (h *RFHub) startGame(room *rfRoom) {
 	first := room.Game.CurrentSeat
 	h.broadcastEvent(room, RFEventPayload{Kind: "game_started", Seat: &first,
 		Name: room.Game.Players[first].Name,
-		Message: fmt.Sprintf("게임 시작 — %s님부터 (비공개 카드 %d장, 시작 칩 %d개, 국고 0)",
+		Message: fmt.Sprintf("게임 시작 — %s님부터 (비공개 카드 %d장, 시작 은화 %d개, 피난처 0)",
 			room.Game.Players[first].Name, RFCardsPerPlayer, RFStartChips)})
 	h.afterProgress(room)
 }
@@ -540,7 +540,7 @@ func (h *RFHub) handleConvert(client *RFClient) {
 		h.sendError(client, err.Error())
 		return
 	}
-	log.Printf("[리포메이션][개종] game=%s | seat%d=%s 자기 진영 변경 (국고 %d)",
+	log.Printf("[리포메이션][개종] game=%s | seat%d=%s 자기 개종 (피난처 %d)",
 		room.Game.ID, client.Seat, displayName(client.Name), room.Game.Treasury)
 	h.afterProgress(room)
 }
@@ -563,7 +563,7 @@ func (h *RFHub) handleConvertOther(client *RFClient, msg RFMessage) {
 		h.sendError(client, err.Error())
 		return
 	}
-	log.Printf("[리포메이션][개종] game=%s | seat%d=%s → seat%d 진영 변경 (국고 %d)",
+	log.Printf("[리포메이션][개종] game=%s | seat%d=%s → seat%d 개종 (피난처 %d)",
 		room.Game.ID, client.Seat, displayName(client.Name), target, room.Game.Treasury)
 	h.afterProgress(room)
 }
@@ -578,7 +578,7 @@ func (h *RFHub) handleEmbezzle(client *RFClient) {
 		h.sendError(client, err.Error())
 		return
 	}
-	log.Printf("[리포메이션][횡령] game=%s | seat%d=%s 국고 %d칩 노림",
+	log.Printf("[리포메이션][횡령] game=%s | seat%d=%s 피난처 은화 %d개 노림",
 		room.Game.ID, client.Seat, displayName(client.Name), room.Game.Treasury)
 	h.afterProgress(room)
 }

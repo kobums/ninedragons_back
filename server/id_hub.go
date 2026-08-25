@@ -772,7 +772,7 @@ func (h *IDHub) finishGame(room *idRoom) {
 	recordWinner := ""
 	switch result.Winner {
 	case "citizens":
-		recordWinner = "시민팀"
+		recordWinner = "일반인팀"
 	case "insider":
 		recordWinner = displayName(insiderName)
 	}
@@ -784,7 +784,7 @@ func (h *IDHub) finishGame(room *idRoom) {
 	insiderSeat := game.InsiderSeat
 	h.broadcastEvent(room, IDEventPayload{Kind: "game_over", Seat: &insiderSeat,
 		Name: insiderName,
-		Message: fmt.Sprintf("게임 종료 — 인사이더는 %s님, 제시어는 [%s]였습니다. %s",
+		Message: fmt.Sprintf("게임 종료 — 인사이더는 %s님, 테마는 [%s]였습니다. %s",
 			insiderName, game.Word, result.Message)})
 	// 최종 스냅샷(역할·제시어 전원 공개)을 먼저 보낸 뒤 종료를 알린다
 	// (봇 러너는 id_game_over 를 보고 스스로 끝난다)

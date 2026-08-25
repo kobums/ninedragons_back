@@ -129,7 +129,7 @@ func sbRoleLabel(role string) string {
 	case string(SBRoleMiner):
 		return "광부"
 	case string(SBRoleSaboteur):
-		return "파괴꾼"
+		return "방해꾼"
 	}
 	return "?"
 }

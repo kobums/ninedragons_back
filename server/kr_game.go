@@ -248,7 +248,7 @@ func (g *KRGame) revealCard(by, target, index int) {
 	n := len(g.Players)
 	if card == KRCardKraken {
 		g.finishWith(string(KRRoleSkeleton), "kraken",
-			fmt.Sprintf("크라켄이 깨어났습니다! %s님의 카드에서 크라켄이 나와 해골단이 승리합니다",
+			fmt.Sprintf("크라켄이 깨어났습니다! %s님의 카드에서 크라켄이 나와 해골이 승리합니다",
 				tp.Name))
 		return
 	}
@@ -264,7 +264,7 @@ func (g *KRGame) revealCard(by, target, index int) {
 	}
 	if g.Round >= KRRounds {
 		g.finishWith(string(KRRoleSkeleton), "timeout",
-			fmt.Sprintf("%d라운드가 모두 끝났습니다 — 보물 %d/%d개에 그쳐 해골단이 승리합니다",
+			fmt.Sprintf("%d라운드가 모두 끝났습니다 — 보물 %d/%d개에 그쳐 해골이 승리합니다",
 				KRRounds, g.FoundTreasure, n))
 		return
 	}

@@ -145,14 +145,14 @@ func (g *CPGame) respondersExcept(except int) map[int]bool {
 // 칩 10개 이상이면 쿠만 허용된다 (쿠 강제).
 func (g *CPGame) DeclareAction(seat int, kind CPActionKind, target int, rng *rand.Rand) error {
 	if g.Phase != CPPhaseAction {
-		return errors.New("지금은 액션을 선언할 수 없습니다")
+		return errors.New("지금은 행동을 선언할 수 없습니다")
 	}
 	if seat != g.CurrentSeat {
 		return errors.New("당신의 차례가 아닙니다")
 	}
 	actor := g.Players[seat]
 	if actor.Chips >= CPForceCoupChips && kind != CPActCoup {
-		return fmt.Errorf("칩이 %d개 이상이면 쿠만 할 수 있습니다", CPForceCoupChips)
+		return fmt.Errorf("은화가 %d개 이상이면 쿠데타만 할 수 있습니다", CPForceCoupChips)
 	}
 
 	needsTarget := kind == CPActCoup || kind == CPActAssassinate || kind == CPActSteal
@@ -165,28 +165,28 @@ func (g *CPGame) DeclareAction(seat int, kind CPActionKind, target int, rng *ran
 	switch kind {
 	case CPActIncome:
 		actor.Chips++
-		g.emit("action", seat, fmt.Sprintf("%s님이 수입으로 1칩을 얻었습니다", actor.Name))
+		g.emit("action", seat, fmt.Sprintf("%s님이 소득으로 은화 1개를 얻었습니다", actor.Name))
 		g.nextTurn()
 
 	case CPActAid:
 		g.Pending = &CPPending{Kind: kind, ActorSeat: seat, TargetSeat: -1, BlockerSeat: -1}
-		g.emit("action", seat, fmt.Sprintf("%s님이 해외원조로 2칩을 받으려 합니다", actor.Name))
+		g.emit("action", seat, fmt.Sprintf("%s님이 외부 원조로 은화 2개를 받으려 합니다", actor.Name))
 		g.openBlockWindow(rng)
 
 	case CPActCoup:
 		if actor.Chips < CPCoupCost {
-			return fmt.Errorf("쿠에는 칩 %d개가 필요합니다", CPCoupCost)
+			return fmt.Errorf("쿠데타에는 은화 %d개가 필요합니다", CPCoupCost)
 		}
 		actor.Chips -= CPCoupCost
 		g.Pending = &CPPending{Kind: kind, ActorSeat: seat, TargetSeat: target, BlockerSeat: -1}
-		g.emit("action", seat, fmt.Sprintf("%s님이 칩 %d개로 %s님에게 쿠를 선언했습니다 — 차단·도전 불가",
+		g.emit("action", seat, fmt.Sprintf("%s님이 은화 %d개로 %s님에게 쿠데타를 선언했습니다 — 저지·도전 불가",
 			actor.Name, CPCoupCost, g.Players[target].Name))
 		g.enterLose(target, cpAfterNextTurn, rng)
 
 	case CPActTax, CPActAssassinate, CPActSteal, CPActExchange:
 		if kind == CPActAssassinate {
 			if actor.Chips < CPAssassinCost {
-				return fmt.Errorf("암살에는 칩 %d개가 필요합니다", CPAssassinCost)
+				return fmt.Errorf("암살에는 은화 %d개가 필요합니다", CPAssassinCost)
 			}
 			actor.Chips -= CPAssassinCost
 		}
@@ -198,20 +198,20 @@ func (g *CPGame) DeclareAction(seat int, kind CPActionKind, target int, rng *ran
 		g.Pending = p
 		switch kind {
 		case CPActTax:
-			g.emit("action", seat, fmt.Sprintf("%s님이 세금(공작 주장)으로 3칩을 걷으려 합니다", actor.Name))
+			g.emit("action", seat, fmt.Sprintf("%s님이 세금 징수(공작 주장)로 은화 3개를 걷으려 합니다", actor.Name))
 		case CPActAssassinate:
-			g.emit("action", seat, fmt.Sprintf("%s님이 칩 %d개로 %s님 암살(암살자 주장)을 선언했습니다",
+			g.emit("action", seat, fmt.Sprintf("%s님이 은화 %d개로 %s님 암살(암살자 주장)을 선언했습니다",
 				actor.Name, CPAssassinCost, g.Players[target].Name))
 		case CPActSteal:
-			g.emit("action", seat, fmt.Sprintf("%s님이 %s님에게 강탈(사령관 주장)을 선언했습니다",
+			g.emit("action", seat, fmt.Sprintf("%s님이 %s님에게 갈취(사령관 주장)를 선언했습니다",
 				actor.Name, g.Players[target].Name))
 		case CPActExchange:
-			g.emit("action", seat, fmt.Sprintf("%s님이 교환(대사 주장)을 선언했습니다", actor.Name))
+			g.emit("action", seat, fmt.Sprintf("%s님이 캐릭터 교환(대사 주장)을 선언했습니다", actor.Name))
 		}
 		g.openChallengeWindow()
 
 	default:
-		return errors.New("알 수 없는 액션입니다")
+		return errors.New("알 수 없는 행동입니다")
 	}
 	return nil
 }
@@ -240,12 +240,12 @@ func (g *CPGame) openBlockWindow(rng *rand.Rand) {
 	p.allowed = map[int]bool{}
 	switch p.Kind {
 	case CPActAid:
-		p.Message = fmt.Sprintf("%s님의 해외원조 — 공작 주장으로 차단하거나 허용하세요",
+		p.Message = fmt.Sprintf("%s님의 외부 원조 — 공작 주장으로 저지하거나 허용하세요",
 			g.Players[p.ActorSeat].Name)
 	case CPActAssassinate:
-		p.Message = fmt.Sprintf("%s님은 백작부인 주장으로 차단할 수 있습니다", g.Players[p.TargetSeat].Name)
+		p.Message = fmt.Sprintf("%s님은 백작 부인 주장으로 저지할 수 있습니다", g.Players[p.TargetSeat].Name)
 	case CPActSteal:
-		p.Message = fmt.Sprintf("%s님은 사령관·대사 주장으로 차단할 수 있습니다", g.Players[p.TargetSeat].Name)
+		p.Message = fmt.Sprintf("%s님은 사령관·대사 주장으로 저지할 수 있습니다", g.Players[p.TargetSeat].Name)
 	}
 	g.Phase = CPPhaseBlockWindow
 	g.StateSeq++
@@ -255,7 +255,7 @@ func (g *CPGame) openBlockChallengeWindow() {
 	p := g.Pending
 	p.responders = g.respondersExcept(p.BlockerSeat)
 	p.allowed = map[int]bool{}
-	p.Message = fmt.Sprintf("%s님의 차단(%s 주장) — 도전하거나 허용하세요",
+	p.Message = fmt.Sprintf("%s님의 저지(%s 주장) — 도전하거나 허용하세요",
 		g.Players[p.BlockerSeat].Name, cpRoleName(p.BlockRole))
 	g.Phase = CPPhaseBlockChallengeWindow
 	g.StateSeq++
@@ -301,7 +301,7 @@ func (g *CPGame) passWindow(rng *rand.Rand) {
 		g.resolveAction(rng) // 아무도 차단하지 않았다
 	case CPPhaseBlockChallengeWindow:
 		p := g.Pending
-		g.emit("block_success", p.BlockerSeat, fmt.Sprintf("%s님의 차단이 통과됐습니다 — %s이 취소됩니다",
+		g.emit("block_success", p.BlockerSeat, fmt.Sprintf("%s님의 저지가 통과됐습니다 — %s 행동이 취소됩니다",
 			g.Players[p.BlockerSeat].Name, cpActionName(p.Kind)))
 		g.nextTurn()
 	}
@@ -345,7 +345,7 @@ func (g *CPGame) SubmitChallenge(seat int, rng *rand.Rand) {
 			return
 		}
 		g.emit("challenge_success", p.ActorSeat, fmt.Sprintf(
-			"도전 성공 — %s님에게 %s 카드가 없었습니다. %s이 취소되고 카드 1장을 잃습니다",
+			"도전 성공 — %s님에게 %s 카드가 없었습니다. %s 행동이 취소되고 카드 1장을 잃습니다",
 			claimant.Name, cpRoleName(p.ClaimRole), cpActionName(p.Kind)))
 		if p.Kind == CPActAssassinate {
 			claimant.Chips += CPAssassinCost // 거짓 암살은 취소 — 지불한 비용 반환
@@ -357,18 +357,18 @@ func (g *CPGame) SubmitChallenge(seat int, rng *rand.Rand) {
 			return
 		}
 		blocker := g.Players[p.BlockerSeat]
-		g.emit("challenge", seat, fmt.Sprintf("%s님이 %s님의 차단(%s 주장)에 도전했습니다",
+		g.emit("challenge", seat, fmt.Sprintf("%s님이 %s님의 저지(%s 주장)에 도전했습니다",
 			g.Players[seat].Name, blocker.Name, cpRoleName(p.BlockRole)))
 		if blocker.HasHidden(p.BlockRole) {
 			g.proveClaim(blocker, p.BlockRole, rng)
 			g.emit("challenge_fail", seat, fmt.Sprintf(
-				"도전 실패 — %s님이 실제 %s 카드를 공개했습니다. 차단이 성립해 %s이 취소되고 %s님이 카드 1장을 잃습니다",
+				"도전 실패 — %s님이 실제 %s 카드를 공개했습니다. 저지가 성립해 %s 행동이 취소되고 %s님이 카드 1장을 잃습니다",
 				blocker.Name, cpRoleName(p.BlockRole), cpActionName(p.Kind), g.Players[seat].Name))
 			g.enterLose(seat, cpAfterNextTurn, rng)
 			return
 		}
 		g.emit("challenge_success", p.BlockerSeat, fmt.Sprintf(
-			"도전 성공 — %s님에게 %s 카드가 없었습니다. 차단이 무효가 되고 카드 1장을 잃습니다",
+			"도전 성공 — %s님에게 %s 카드가 없었습니다. 저지가 무효가 되고 카드 1장을 잃습니다",
 			blocker.Name, cpRoleName(p.BlockRole)))
 		g.enterLose(p.BlockerSeat, cpAfterResolve, rng)
 	}
@@ -395,14 +395,14 @@ func (g *CPGame) proveClaim(p *CPPlayer, role CPRole, rng *rand.Rand) {
 // 암살·강탈은 대상만 차단할 수 있다.
 func (g *CPGame) SubmitBlock(seat int, role CPRole) error {
 	if g.Phase != CPPhaseBlockWindow || g.Pending == nil {
-		return errors.New("지금은 차단할 수 없습니다")
+		return errors.New("지금은 저지할 수 없습니다")
 	}
 	p := g.Pending
 	if !p.responders[seat] {
-		return errors.New("차단할 수 없는 좌석입니다")
+		return errors.New("저지할 수 없는 좌석입니다")
 	}
 	if (p.Kind == CPActAssassinate || p.Kind == CPActSteal) && seat != p.TargetSeat {
-		return errors.New("대상만 차단할 수 있습니다")
+		return errors.New("대상만 저지할 수 있습니다")
 	}
 	valid := false
 	for _, r := range cpBlockRoles[p.Kind] {
@@ -411,11 +411,11 @@ func (g *CPGame) SubmitBlock(seat int, role CPRole) error {
 		}
 	}
 	if !valid {
-		return errors.New("이 액션을 차단할 수 없는 역할입니다")
+		return errors.New("이 행동을 저지할 수 없는 역할입니다")
 	}
 	p.BlockerSeat = seat
 	p.BlockRole = role
-	g.emit("block", seat, fmt.Sprintf("%s님이 %s 주장으로 %s을 차단했습니다",
+	g.emit("block", seat, fmt.Sprintf("%s님이 %s 주장으로 %s 행동을 저지했습니다",
 		g.Players[seat].Name, cpRoleName(role), cpActionName(p.Kind)))
 	g.openBlockChallengeWindow()
 	return nil
@@ -497,12 +497,12 @@ func (g *CPGame) resolveAction(rng *rand.Rand) {
 	switch p.Kind {
 	case CPActAid:
 		actor.Chips += 2
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 해외원조로 2칩을 받았습니다", actor.Name))
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 외부 원조로 은화 2개를 받았습니다", actor.Name))
 		g.nextTurn()
 
 	case CPActTax:
 		actor.Chips += 3
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 세금으로 3칩을 걷었습니다", actor.Name))
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 세금 징수로 은화 3개를 걷었습니다", actor.Name))
 		g.nextTurn()
 
 	case CPActSteal:
@@ -514,7 +514,7 @@ func (g *CPGame) resolveAction(rng *rand.Rand) {
 			}
 			target.Chips -= amt
 			actor.Chips += amt
-			g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 %s님에게서 %d칩을 강탈했습니다",
+			g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 %s님에게서 은화 %d개를 갈취했습니다",
 				actor.Name, target.Name, amt))
 		}
 		g.nextTurn()
@@ -532,7 +532,7 @@ func (g *CPGame) resolveAction(rng *rand.Rand) {
 		g.ExchangeCards = append(actor.HiddenRoles(), g.Deck[0], g.Deck[1])
 		g.Deck = g.Deck[2:]
 		p.Message = fmt.Sprintf("%s님이 유지할 카드를 고르는 중입니다", actor.Name)
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 덱에서 2장을 뽑아 교환을 시작합니다", actor.Name))
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 궁정 덱에서 2장을 뽑아 캐릭터 교환을 시작합니다", actor.Name))
 		g.Phase = CPPhaseExchangePick
 		g.StateSeq++
 	}
@@ -542,7 +542,7 @@ func (g *CPGame) resolveAction(rng *rand.Rand) {
 // 카드를 비공개 장수만큼 고른다. 나머지는 덱에 반납하고 섞는다.
 func (g *CPGame) SubmitExchangeKeep(seat int, indices []int, rng *rand.Rand) error {
 	if g.Phase != CPPhaseExchangePick || g.Pending == nil || seat != g.Pending.ActorSeat {
-		return errors.New("지금은 교환 선택을 할 수 없습니다")
+		return errors.New("지금은 캐릭터 교환 선택을 할 수 없습니다")
 	}
 	actor := g.Players[seat]
 	hidden := actor.HiddenIdx()
@@ -566,7 +566,7 @@ func (g *CPGame) SubmitExchangeKeep(seat int, indices []int, rng *rand.Rand) err
 	}
 	rng.Shuffle(len(g.Deck), func(a, b int) { g.Deck[a], g.Deck[b] = g.Deck[b], g.Deck[a] })
 	g.ExchangeCards = nil
-	g.emit("exchange_done", seat, fmt.Sprintf("%s님이 교환을 마쳤습니다", actor.Name))
+	g.emit("exchange_done", seat, fmt.Sprintf("%s님이 캐릭터 교환을 마쳤습니다", actor.Name))
 	g.nextTurn()
 	return nil
 }

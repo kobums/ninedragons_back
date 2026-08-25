@@ -16,7 +16,7 @@ import (
 // 스컬 단계 타이머 — 접속만 유지한 채 행동하지 않는 좌석이 게임을 영구
 // 정지시키지 않게, 만료 시 자동 행동으로 해소한다 (테스트에서 짧게 낮춘다).
 //   - placing(동시): 미배치 전원 무작위 카드 1장
-//   - placing(턴): 무작위 카드 1장 (손패가 없으면 최소 배팅 1)
+//   - placing(턴): 무작위 카드 1장 (손패가 없으면 최소 베팅 1)
 //   - bidding: 패스
 //   - flipping: 무작위 상대 더미 1장
 var (
@@ -560,7 +560,7 @@ func (h *SKHub) handleBid(client *SKClient, msg SKMessage) {
 		return
 	}
 	seat := client.Seat
-	log.Printf("[스컬][배팅] game=%s | %d라운드 | seat%d=%s 장미 %d장 선언",
+	log.Printf("[스컬][베팅] game=%s | %d라운드 | seat%d=%s 장미 %d장 선언",
 		game.ID, game.RoundNo, seat, displayName(client.Name), payload.Count)
 	h.broadcastEvent(room, SKEventPayload{Kind: "bid", Seat: &seat, Name: client.Name,
 		Message: fmt.Sprintf("%s님이 장미 %d장 뒤집기를 선언했습니다", client.Name, payload.Count)})
@@ -622,7 +622,7 @@ func (h *SKHub) emitFlipEvent(room *skRoom) {
 		Message: fmt.Sprintf("%s님 더미에서 %s가 나왔습니다", game.Players[owner].Name, label)})
 }
 
-// afterProgress 배팅·패스·뒤집기 뒤의 공통 마무리 — 도전 확정·라운드 결과
+// afterProgress 베팅·패스·뒤집기 뒤의 공통 마무리 — 도전 확정·라운드 결과
 // 이벤트를 쏘고, 다음 단계의 마감을 걸고, 스냅샷을 뿌린다.
 func (h *SKHub) afterProgress(room *skRoom, prevChallenger int) {
 	game := room.Game
@@ -728,11 +728,11 @@ func (h *SKHub) handlePhaseFired(sig skPhaseSignal) {
 			h.broadcastState(room)
 			return
 		}
-		// 손패가 없으면 최소 배팅 1을 대신 선언한다
+		// 손패가 없으면 최소 베팅 1을 대신 선언한다
 		if err := game.SubmitBid(cur, 1, h.rng); err != nil {
 			return
 		}
-		log.Printf("[스컬][배치마감] game=%s | %d라운드 | seat%d 타임아웃 — 자동 배팅 1",
+		log.Printf("[스컬][배치마감] game=%s | %d라운드 | seat%d 타임아웃 — 자동 베팅 1",
 			game.ID, game.RoundNo, cur)
 		h.broadcastEvent(room, SKEventPayload{Kind: "bid", Seat: &cur, Name: game.Players[cur].Name,
 			Message: fmt.Sprintf("%s님이 장미 1장 뒤집기를 선언했습니다 (자동)", game.Players[cur].Name)})
@@ -747,7 +747,7 @@ func (h *SKHub) handlePhaseFired(sig skPhaseSignal) {
 		if err := game.SubmitPass(cur, h.rng); err != nil {
 			return
 		}
-		log.Printf("[스컬][배팅마감] game=%s | %d라운드 | seat%d 타임아웃 — 자동 패스",
+		log.Printf("[스컬][베팅마감] game=%s | %d라운드 | seat%d 타임아웃 — 자동 패스",
 			game.ID, game.RoundNo, cur)
 		h.broadcastEvent(room, SKEventPayload{Kind: "pass", Seat: &cur, Name: game.Players[cur].Name,
 			Message: fmt.Sprintf("%s님이 패스했습니다 (자동)", game.Players[cur].Name)})
@@ -980,7 +980,7 @@ func (h *SKHub) handleDisconnect(client *SKClient) {
 }
 
 // handleGraceExpired 유예 안에 재접속하지 않은 좌석은 연습봇으로 대체하고
-// 게임은 계속한다 — 배치·배팅·뒤집기 진행이 이탈 좌석에 막히지 않는 근거
+// 게임은 계속한다 — 배치·베팅·뒤집기 진행이 이탈 좌석에 막히지 않는 근거
 func (h *SKHub) handleGraceExpired(sessionID string) {
 	client, ok := h.expire(sessionID)
 	if !ok {

@@ -40,7 +40,7 @@ const (
 	CWRocketMaxRank = 4
 	CWDeckSize      = 4*CWColorMaxRank + CWRocketMaxRank // 40
 
-	// CWTokenPerMission 임무마다 1인이 쓸 수 있는 소통 토큰 수
+	// CWTokenPerMission 임무마다 1인이 쓸 수 있는 통신 토큰 수
 	CWTokenPerMission = 1
 )
 
@@ -55,7 +55,7 @@ const (
 	CWSuitRocket CWSuit = "rocket"
 )
 
-// cwColorSuits 색 무늬 4종 (임무·소통은 색 카드만 다룬다)
+// cwColorSuits 색 무늬 4종 (임무·통신은 색 카드만 다룬다)
 var cwColorSuits = []CWSuit{CWSuitBlue, CWSuitGreen, CWSuitPink, CWSuitYellow}
 
 // cwSuitOrder 손패 정렬 순서 (로켓을 맨 뒤로)
@@ -92,7 +92,7 @@ func cwCardLabel(card CWCard) string {
 	return cwSuitLabel(card.Suit) + " " + strconv.Itoa(card.Rank)
 }
 
-// CWHint 소통 선언 — 공개한 카드가 그 색 안에서 차지하는 위치.
+// CWHint 통신 선언 — 공개한 카드가 그 색 안에서 차지하는 위치.
 // 서버가 진실 여부를 검증한다 (거짓 선언은 에러).
 type CWHint string
 
@@ -151,7 +151,7 @@ const (
 	CWMsgError              CWMessageType = "cw_error"
 )
 
-// CWTask 임무 카드 — 전원 공개. Seat 담당자가 이 카드가 들어 있는 트릭을
+// CWTask 과제 카드 — 전원 공개. Seat 담당자가 이 카드가 들어 있는 트릭을
 // 이겨야 한다. 좌석 0 유실을 막기 위해 omitempty 를 쓰지 않는다.
 type CWTask struct {
 	Suit CWSuit `json:"suit"`
@@ -166,7 +166,7 @@ type CWTrickCard struct {
 	Card CWCard `json:"card"`
 }
 
-// CWReveal 소통으로 공개한 카드와 선언 — 전원이 계속 본다.
+// CWReveal 통신으로 공개한 카드와 선언 — 전원이 계속 본다.
 // 공개해도 카드는 손에 남아 있다.
 type CWReveal struct {
 	Card CWCard `json:"card"`
@@ -193,11 +193,11 @@ type CWResult struct {
 type CWPlayer struct {
 	Seat int
 	Name string
-	// Hand 남은 손패 (본인만 내용을 본다). 소통으로 공개한 카드도 여기 남는다
+	// Hand 남은 손패 (본인만 내용을 본다). 통신으로 공개한 카드도 여기 남는다
 	Hand []CWCard
-	// TokenLeft 남은 소통 토큰 (임무마다 1로 초기화)
+	// TokenLeft 남은 통신 토큰 (임무마다 1로 초기화)
 	TokenLeft int
-	// Revealed 소통으로 공개한 카드와 선언 (전원 공개). nil 이면 미공개
+	// Revealed 통신으로 공개한 카드와 선언 (전원 공개). nil 이면 미공개
 	Revealed *CWReveal
 }
 
@@ -216,7 +216,7 @@ type CWGame struct {
 	Players []*CWPlayer
 	Phase   CWPhase
 
-	// Mission 현재 임무 단계 = 임무 카드 수 (1~MaxMission, 시작 전 0)
+	// Mission 현재 임무 단계 = 과제 카드 수 (1~MaxMission, 시작 전 0)
 	Mission    int
 	MaxMission int
 
@@ -233,7 +233,7 @@ type CWGame struct {
 	// trickOrder 이번 트릭에 카드를 낼 좌석 순서 (손패가 남은 좌석만)
 	trickOrder []int
 
-	// Tasks 이번 임무의 임무 카드 (전원 공개)
+	// Tasks 이번 임무의 과제 카드 (전원 공개)
 	Tasks []CWTask
 
 	LastTrick *CWLastTrick // 직전 트릭 (그 전엔 nil)
@@ -243,7 +243,7 @@ type CWGame struct {
 	StartedAt time.Time
 
 	// StateSeq 새 대기 상태(다음 차례·임무 정산)가 열릴 때마다 +1 —
-	// 허브가 마감 타이머를 다시 걸지 판단하는 근거. 소통은 대기 상태를
+	// 허브가 마감 타이머를 다시 걸지 판단하는 근거. 통신은 대기 상태를
 	// 바꾸지 않으므로 StateSeq 를 올리지 않는다 (마감이 늘어나지 않는다).
 	StateSeq int
 	// AfkSeq 마감 타이머 일련번호 (뒤늦은 발화 무시용 — 허브가 관리)
@@ -286,7 +286,7 @@ type CWPlayPayload struct {
 	Index int `json:"index"`
 }
 
-// CWCommunicatePayload 소통 — 손패 인덱스와 선언.
+// CWCommunicatePayload 통신 — 손패 인덱스와 선언.
 // 선언은 서버가 진실 여부를 검증한다 (거짓이면 에러).
 type CWCommunicatePayload struct {
 	Index int    `json:"index"`
@@ -300,7 +300,7 @@ type CWReactPayload struct {
 // ==================== 서버 → 클라이언트 payload ====================
 
 // CWPlayerView 좌석별 공개 정보 — 좌석 0·장수 0 유실 방지를 위해 omitempty 금지.
-// Revealed 는 소통으로 공개한 카드라 전원 공개다 (미공개는 null).
+// Revealed 는 통신으로 공개한 카드라 전원 공개다 (미공개는 null).
 type CWPlayerView struct {
 	Seat      int       `json:"seat"`
 	Name      string    `json:"name"`
@@ -332,7 +332,7 @@ type CWGameStatePayload struct {
 	LeadSuit      CWSuit `json:"leadSuit"`
 	// Trick 이번 트릭 진행분 — 항상 [] (nil → JSON null 금지)
 	Trick []CWTrickCard `json:"trick"`
-	// Tasks 임무 카드 — 전원 공개, 항상 []
+	// Tasks 과제 카드 — 전원 공개, 항상 []
 	Tasks []CWTask `json:"tasks"`
 	// YourHand 본인 손패 — 본인에게만 (관전자 부재).
 	// 빈 손패도 [] 로 나가야 하므로 슬라이스 포인터로 부재를 표현한다.

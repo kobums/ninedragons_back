@@ -39,7 +39,7 @@ func ytCategoryName(cat string) string {
 	case YTCatTriple:
 		return "트리플"
 	case YTCatQuad:
-		return "포 카드"
+		return "포카드"
 	case YTCatFullHouse:
 		return "풀하우스"
 	case YTCatSmall:

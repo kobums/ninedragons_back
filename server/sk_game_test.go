@@ -92,12 +92,12 @@ func TestSKPlacingFlow(t *testing.T) {
 		t.Fatalf("턴제 파트 진입 실패: turns=%v cur=%d", g.PlacingTurns, g.CurrentSeat)
 	}
 
-	// 차례 아닌 배치·배팅 거부
+	// 차례 아닌 배치·베팅 거부
 	if err := g.SubmitPlace(1, 0); err == nil {
 		t.Fatal("차례가 아닌데 배치가 허용됐다")
 	}
 	if err := g.SubmitBid(2, 1, rng); err == nil {
-		t.Fatal("차례가 아닌데 배팅이 허용됐다")
+		t.Fatal("차례가 아닌데 베팅이 허용됐다")
 	}
 
 	// seat0 추가 배치 → 차례가 넘어간다
@@ -108,22 +108,22 @@ func TestSKPlacingFlow(t *testing.T) {
 		t.Fatalf("턴 배치 반영 이상: cur=%d stack0=%d", g.CurrentSeat, len(g.Players[0].Stack))
 	}
 
-	// 배팅 범위 검증 (총 배치 4장)
+	// 베팅 범위 검증 (총 배치 4장)
 	if err := g.SubmitBid(1, 0, rng); err == nil {
-		t.Fatal("0장 배팅이 허용됐다")
+		t.Fatal("0장 베팅이 허용됐다")
 	}
 	if err := g.SubmitBid(1, 5, rng); err == nil {
-		t.Fatal("전체 배치 수를 넘는 배팅이 허용됐다")
+		t.Fatal("전체 배치 수를 넘는 베팅이 허용됐다")
 	}
 	if err := g.SubmitBid(1, 2, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	if g.Phase != SKPhaseBidding || g.HighBid != 2 || g.Players[1].Bid != 2 || g.CurrentSeat != 2 {
-		t.Fatalf("배팅 반영 이상: phase=%s high=%d cur=%d", g.Phase, g.HighBid, g.CurrentSeat)
+		t.Fatalf("베팅 반영 이상: phase=%s high=%d cur=%d", g.Phase, g.HighBid, g.CurrentSeat)
 	}
-	// 배팅 단계에서 배치는 거부
+	// 베팅 단계에서 배치는 거부
 	if err := g.SubmitPlace(2, 0); err == nil {
-		t.Fatal("배팅 단계에서 배치가 허용됐다")
+		t.Fatal("베팅 단계에서 배치가 허용됐다")
 	}
 	// 레이즈는 현재보다 커야 한다
 	if err := g.SubmitBid(2, 2, rng); err == nil {
@@ -141,7 +141,7 @@ func TestSKFlipSuccessAndTwoPointWin(t *testing.T) {
 	}
 	g.SubmitPlace(0, skRoseIndex(t, g, 0)) // seat0 stack: 장미 2
 	if err := g.SubmitBid(1, 2, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	if err := g.SubmitPass(2, rng); err != nil {
 		t.Fatalf("패스 실패: %v", err)
@@ -197,7 +197,7 @@ func TestSKFlipSuccessAndTwoPointWin(t *testing.T) {
 	}
 	g.SubmitPlace(1, skRoseIndex(t, g, 1)) // 선(seat1)이 한 장 더
 	if err := g.SubmitBid(2, 1, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	g.SubmitPass(0, rng)
 	g.SubmitPass(1, rng)
@@ -210,13 +210,13 @@ func TestSKFlipSuccessAndTwoPointWin(t *testing.T) {
 	for s := 0; s < 3; s++ {
 		g.SubmitPlace(s, skRoseIndex(t, g, s))
 	}
-	// 선 seat2 가 배팅 1 → seat0·seat1 패스 대신, seat2 는 배치하고 seat0 이 배팅
-	// 단순화: seat2(선) 즉시 배팅 1 → 나머지 패스 → seat2 성공 2점? seat2 는 1점.
-	// seat1 을 2점으로 만들기 위해 seat2 는 배치, seat0 배팅 1, seat1 레이즈 2,
+	// 선 seat2 가 베팅 1 → seat0·seat1 패스 대신, seat2 는 배치하고 seat0 이 베팅
+	// 단순화: seat2(선) 즉시 베팅 1 → 나머지 패스 → seat2 성공 2점? seat2 는 1점.
+	// seat1 을 2점으로 만들기 위해 seat2 는 배치, seat0 베팅 1, seat1 레이즈 2,
 	// seat0·seat2 패스 → 도전자 seat1(자기 더미 장미1) → 상대 장미 1장 → 성공.
 	g.SubmitPlace(2, skRoseIndex(t, g, 2))
 	if err := g.SubmitBid(0, 1, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	if err := g.SubmitBid(1, 2, rng); err != nil {
 		t.Fatalf("레이즈 실패: %v", err)
@@ -245,12 +245,12 @@ func TestSKFailRemovalEliminationSurvivorWin(t *testing.T) {
 	g.SubmitPlace(1, skRoseIndex(t, g, 1))
 	g.SubmitPlace(2, skRoseIndex(t, g, 2))
 
-	// 선 seat0 — 손패가 없어 배치 불가, 배팅만 가능
+	// 선 seat0 — 손패가 없어 배치 불가, 베팅만 가능
 	if err := g.SubmitPlace(0, 0); err == nil {
 		t.Fatal("손패가 없는데 배치가 허용됐다")
 	}
 	if err := g.SubmitBid(0, 1, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	g.SubmitPass(1, rng)
 	g.SubmitPass(2, rng)
@@ -285,7 +285,7 @@ func TestSKFailRemovalEliminationSurvivorWin(t *testing.T) {
 		t.Fatalf("2라운드 턴 진입 이상: turns=%v cur=%d", g.PlacingTurns, g.CurrentSeat)
 	}
 	if err := g.SubmitBid(1, 1, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	if err := g.SubmitPass(2, rng); err != nil {
 		t.Fatalf("패스 실패: %v", err)
@@ -310,7 +310,7 @@ func TestSKFailRemovesOneCardAndFailerLeads(t *testing.T) {
 
 	// 선 seat0 이 전체 배치 수(3)를 선언 → 즉시 도전자
 	if err := g.SubmitBid(0, 3, rng); err != nil {
-		t.Fatalf("배팅 실패: %v", err)
+		t.Fatalf("베팅 실패: %v", err)
 	}
 	if g.Phase != SKPhaseFlipping || g.ChallengerSeat != 0 {
 		t.Fatalf("즉시 도전 이상: phase=%s challenger=%d", g.Phase, g.ChallengerSeat)

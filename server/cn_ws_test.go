@@ -290,7 +290,7 @@ func TestCNAfkTwoStage(t *testing.T) {
 		ev, ok := m.Payload.(map[string]interface{})
 		return ok && ev["kind"] == "afk" && strings.Contains(ev["message"].(string), "턴을 넘깁니다")
 	}).Payload)
-	if !strings.Contains(afk2["message"].(string), "적팀") {
+	if !strings.Contains(afk2["message"].(string), "빨간 팀") {
 		t.Fatalf("2단계 AFK 문구 = %v", afk2["message"])
 	}
 	state = watcher.waitMatch(t, "blue-clue", func(m CNMessage) bool {

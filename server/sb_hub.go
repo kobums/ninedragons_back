@@ -402,7 +402,7 @@ func (h *SBHub) startGame(room *sbRoom) {
 		names = append(names, displayName(p.Name))
 	}
 	pool := room.Game.Pool
-	log.Printf("[사보타지][경기시작] game=%s | 인원=%d | 풀=광부%d:파괴꾼%d | 선=seat%d | %v",
+	log.Printf("[사보타지][경기시작] game=%s | 인원=%d | 풀=광부%d:방해꾼%d | 선=seat%d | %v",
 		room.Game.ID, len(room.Game.Players), pool.Miner, pool.Saboteur,
 		room.Game.CurrentSeat, names)
 	if !sbRoomHasBot(room) { // 연습봇전은 운영자 알림을 억제한다
@@ -411,7 +411,7 @@ func (h *SBHub) startGame(room *sbRoom) {
 
 	h.broadcastEvent(room, SBEventPayload{Kind: "game_started",
 		Message: fmt.Sprintf(
-			"게임 시작 — %d인전, 역할 풀은 광부 %d·파괴꾼 %d 중 %d장을 나눠 가집니다. 자기 역할은 자기만 봅니다",
+			"게임 시작 — %d인전, 역할 풀은 광부 %d·방해꾼 %d 중 %d장을 나눠 가집니다. 자기 역할은 자기만 봅니다",
 			len(room.Game.Players), pool.Miner, pool.Saboteur, len(room.Game.Players))})
 	h.afterProgress(room)
 }

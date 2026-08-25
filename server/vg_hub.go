@@ -759,10 +759,10 @@ func (h *VGHub) finishGame(room *vgRoom) {
 
 	message := ""
 	if len(game.WinnerSeats) == 1 {
-		message = fmt.Sprintf("%s님이 총 %d만으로 승리했습니다!",
+		message = fmt.Sprintf("%s님이 총 %d만 달러로 승리했습니다!",
 			winnerNames[0], totals[game.WinnerSeats[0]])
 	} else {
-		message = fmt.Sprintf("%s님이 총 %d만으로 공동 승리했습니다!",
+		message = fmt.Sprintf("%s님이 총 %d만 달러로 공동 승리했습니다!",
 			strings.Join(winnerNames, "님, "), totals[game.WinnerSeats[0]])
 	}
 	first := game.WinnerSeats[0]

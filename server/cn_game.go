@@ -31,20 +31,20 @@ func cnTeamOf(seat int) CNTeam {
 // cnTeamName 팀 한글 이름 (이벤트 문구용)
 func cnTeamName(team CNTeam) string {
 	if team == CNTeamRed {
-		return "적팀"
+		return "빨간 팀"
 	}
-	return "청팀"
+	return "파란 팀"
 }
 
 // cnColorName 카드 색 한글 이름 (이벤트 문구용)
 func cnColorName(color CNColor) string {
 	switch color {
 	case CNColorRed:
-		return "적팀 단어"
+		return "빨간 팀 요원"
 	case CNColorBlue:
-		return "청팀 단어"
+		return "파란 팀 요원"
 	case CNColorNeutral:
-		return "중립 단어"
+		return "행인"
 	case CNColorAssassin:
 		return "암살자"
 	}
@@ -190,7 +190,7 @@ func (g *CNGame) GiveClue(seat int, word string, count int) error {
 	}
 	p := g.playerAt(seat)
 	if p == nil || p.Role != CNRoleSpymaster || p.Team != g.CurrentTeam {
-		return errors.New("현재 팀의 스파이마스터만 힌트를 낼 수 있습니다")
+		return errors.New("현재 팀의 팀장만 힌트를 낼 수 있습니다")
 	}
 	word = strings.TrimSpace(word)
 	if word == "" {
@@ -230,7 +230,7 @@ func (g *CNGame) Pick(seat, index int) (*CNPickResult, error) {
 		return nil, errors.New("당신 팀의 차례가 아닙니다")
 	}
 	if p.Role != CNRoleAgent {
-		return nil, errors.New("스파이마스터는 카드를 선택할 수 없습니다")
+		return nil, errors.New("팀장은 카드를 선택할 수 없습니다")
 	}
 	if index < 0 || index >= len(g.Board) {
 		return nil, errors.New("잘못된 카드 위치입니다")
@@ -289,7 +289,7 @@ func (g *CNGame) EndTurn(seat int) error {
 	}
 	p := g.playerAt(seat)
 	if p == nil || p.Team != g.CurrentTeam || p.Role != CNRoleAgent {
-		return errors.New("현재 팀의 요원만 턴을 넘길 수 있습니다")
+		return errors.New("현재 팀의 팀원만 턴을 넘길 수 있습니다")
 	}
 	g.endTurn()
 	return nil

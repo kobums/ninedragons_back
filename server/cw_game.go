@@ -10,7 +10,7 @@ import (
 
 // ==================== 더 크루 순수 규칙 ====================
 //
-// 덱 배분·사령관 결정·임무 배정·트릭 진행·소통 검증·성공/실패 판정만 다룬다.
+// 덱 배분·사령관 결정·임무 배정·트릭 진행·통신 검증·성공/실패 판정만 다룬다.
 // 클라이언트·타이머를 모르며, 허브(cw_hub.go)가 카드 마감(45초)과 임무 정산
 // 대기(5초)를 걸고 이벤트 큐(DrainEvents)를 방송한다.
 //
@@ -20,7 +20,7 @@ import (
 //	→ 로켓 4 보유자가 사령관 = 첫 리드
 //	→ 색 숫자 카드 중 mission 장을 뽑아 좌석에 배정 (전원 공개)
 //	→ 트릭 반복: 리드 무늬 따라내기 의무, 로켓 있으면 로켓 최고가 승
-//	→ 트릭이 끝날 때마다 그 안의 임무 카드를 판정
+//	→ 트릭이 끝날 때마다 그 안의 과제 카드를 판정
 //	   · 담당자가 이겼다 → 완료
 //	   · 남이 이겼다     → 즉시 실패 (wrong_winner)
 //	→ 임무를 다 마치면 성공 (다음 임무 / maxMission 이면 클리어)
@@ -177,7 +177,7 @@ func (g *CWGame) Start(rng *rand.Rand) error {
 	g.Phase = CWPhasePlaying
 	g.StateSeq++
 	g.emit("mission_start", g.CommanderSeat, fmt.Sprintf(
-		"1번째 임무 — 임무 카드 %d장. 로켓 4를 쥔 %s님이 사령관으로 먼저 리드합니다",
+		"1번째 임무 — 과제 카드 %d장. 로켓 4를 쥔 %s님이 사령관으로 먼저 리드합니다",
 		len(g.Tasks), g.Players[g.CommanderSeat].Name))
 	return nil
 }
@@ -192,7 +192,7 @@ func (g *CWGame) NextMission(rng *rand.Rand) {
 	g.Phase = CWPhasePlaying
 	g.StateSeq++
 	g.emit("mission_start", g.CommanderSeat, fmt.Sprintf(
-		"%d번째 임무 — 임무 카드 %d장. 로켓 4를 쥔 %s님이 사령관으로 먼저 리드합니다",
+		"%d번째 임무 — 과제 카드 %d장. 로켓 4를 쥔 %s님이 사령관으로 먼저 리드합니다",
 		g.Mission, len(g.Tasks), g.Players[g.CommanderSeat].Name))
 }
 
@@ -340,7 +340,7 @@ func (g *CWGame) Play(seat, index int) error {
 }
 
 // ForcePlay 카드 마감 — 낼 수 있는 카드 중 무작위로 자동 제출한다 (허브 타이머).
-// 소통은 자동으로 하지 않는다.
+// 통신은 자동으로 하지 않는다.
 func (g *CWGame) ForcePlay(rng *rand.Rand) {
 	if g.Phase != CWPhasePlaying {
 		return
@@ -388,8 +388,8 @@ func (g *CWGame) playCard(seat, index int) {
 	g.StateSeq++ // 새 차례 — 허브가 45초 마감을 다시 건다
 }
 
-// resolveTrick 트릭 정산 — 승자를 가리고 그 안의 임무 카드를 판정한다.
-// 임무 카드를 담당자가 아닌 사람이 가져가면 즉시 실패다.
+// resolveTrick 트릭 정산 — 승자를 가리고 그 안의 과제 카드를 판정한다.
+// 과제 카드를 담당자가 아닌 사람이 가져가면 즉시 실패다.
 func (g *CWGame) resolveTrick() {
 	winner := cwTrickWinner(g.Trick, g.LeadSuit)
 	cards := append([]CWTrickCard{}, g.Trick...)
@@ -417,12 +417,12 @@ func (g *CWGame) resolveTrick() {
 			if task.Seat == winner {
 				task.Done = true
 				g.emit("task_done", task.Seat, fmt.Sprintf(
-					"임무 완료 — %s님이 %s를 가져갔습니다 (%d/%d)",
+					"과제 완료 — %s님이 %s를 가져갔습니다 (%d/%d)",
 					owner, cwCardLabel(tc.Card), g.doneTasks(), len(g.Tasks)))
 				continue
 			}
 			g.failMission("wrong_winner", fmt.Sprintf(
-				"임무 실패 — %s는 %s님의 임무였는데 %s님이 가져갔습니다",
+				"임무 실패 — %s는 %s님의 과제였는데 %s님이 가져갔습니다",
 				cwCardLabel(tc.Card), owner, winnerName))
 			return
 		}
@@ -434,7 +434,7 @@ func (g *CWGame) resolveTrick() {
 	}
 	if g.handsEmpty() {
 		g.failMission("out_of_cards", fmt.Sprintf(
-			"임무 실패 — 카드가 모두 떨어졌는데 임무 %d개가 남았습니다",
+			"임무 실패 — 카드가 모두 떨어졌는데 과제 %d개가 남았습니다",
 			len(g.Tasks)-g.doneTasks()))
 		return
 	}
@@ -483,7 +483,7 @@ func (g *CWGame) completeMission() {
 	g.CurrentSeat = -1
 	g.StateSeq++
 	g.emit("mission_clear", -1, fmt.Sprintf(
-		"%d번째 임무 성공! 잠시 후 %d번째 임무(임무 카드 %d장)를 시작합니다",
+		"%d번째 임무 성공! 잠시 후 %d번째 임무(과제 카드 %d장)를 시작합니다",
 		g.Mission, g.Mission+1, g.Mission+1))
 }
 
@@ -502,13 +502,13 @@ func (g *CWGame) failMission(reason, msg string) {
 	g.emit("mission_fail", -1, msg)
 }
 
-// ==================== 소통 ====================
+// ==================== 통신 ====================
 
 // Communicate 손패의 색 숫자 카드 한 장을 공개하며 그 색 안에서의 위치를
 // 선언한다. 서버가 다음을 전부 검증한다:
 //
 //	· 트릭 시작 시점(트릭에 카드가 하나도 없을 때)에만
-//	· 임무마다 1회 (소통 토큰)
+//	· 임무마다 1회 (통신 토큰)
 //	· 색 숫자 카드만 — 로켓 불가
 //	· 선언이 실제로 참일 것 (highest/lowest 는 그 색을 2장 이상 들고 있을 때만,
 //	  1장뿐이면 only 로만 알릴 수 있다)
@@ -516,17 +516,17 @@ func (g *CWGame) failMission(reason, msg string) {
 // 공개한 카드는 손에 남고 전원이 계속 본다.
 func (g *CWGame) Communicate(seat, index int, hint CWHint) error {
 	if g.Phase != CWPhasePlaying {
-		return errors.New("지금은 소통할 수 없습니다")
+		return errors.New("지금은 통신할 수 없습니다")
 	}
 	if len(g.Trick) != 0 {
-		return errors.New("트릭이 시작된 뒤에는 소통할 수 없습니다")
+		return errors.New("트릭이 시작된 뒤에는 통신할 수 없습니다")
 	}
 	if seat < 0 || seat >= len(g.Players) {
 		return errors.New("잘못된 좌석입니다")
 	}
 	p := g.Players[seat]
 	if p.TokenLeft <= 0 {
-		return errors.New("이번 임무의 소통 토큰을 이미 썼습니다")
+		return errors.New("이번 임무의 통신 토큰을 이미 썼습니다")
 	}
 	if index < 0 || index >= len(p.Hand) {
 		return errors.New("잘못된 카드입니다")
@@ -575,7 +575,7 @@ func (g *CWGame) Communicate(seat, index int, hint CWHint) error {
 
 	p.Revealed = &CWReveal{Card: card, Hint: hint}
 	p.TokenLeft--
-	g.emit("communicate", seat, fmt.Sprintf("%s님의 소통 — %s (그 색 중 %s)",
+	g.emit("communicate", seat, fmt.Sprintf("%s님의 통신 — %s (그 색 중 %s)",
 		p.Name, cwCardLabel(card), cwHintLabel(hint)))
 	return nil
 }

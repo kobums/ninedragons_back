@@ -455,7 +455,7 @@ func (h *AVHub) beginTeamPick(room *avRoom) {
 	leader := game.LeaderSeat
 	h.broadcastEvent(room, AVEventPayload{Kind: "team_pick", Seat: &leader,
 		Name: game.Players[leader].Name,
-		Message: fmt.Sprintf("%d라운드 원정대 지명 — %s님이 리더입니다 (%d명)",
+		Message: fmt.Sprintf("%d라운드 원정대 지명 — %s님이 대표입니다 (%d명)",
 			game.Round, game.Players[leader].Name, game.CurrentQuestSize())})
 	h.scheduleDeadline(room, avPickTimeout)
 	h.broadcastState(room)
@@ -611,7 +611,7 @@ func (h *AVHub) resolveTeamVote(room *avRoom) {
 	log.Printf("[아발론][팀투표] game=%s | %d라운드 | 부결 (연속 %d회, 찬성 %d/%d)",
 		game.ID, game.Round, game.RejectCount, approves, len(game.Players))
 	h.broadcastEvent(room, AVEventPayload{Kind: "team_rejected",
-		Message: fmt.Sprintf("원정대가 부결되었습니다 (연속 %d회) — 다음 리더가 지명합니다", game.RejectCount)})
+		Message: fmt.Sprintf("원정대가 부결되었습니다 (연속 %d회) — 다음 대표가 지명합니다", game.RejectCount)})
 	h.beginTeamPick(room)
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 // 더 크루 대기 상태 마감 타이머 — 카드 45초 미응답은 낼 수 있는 카드 중
-// 무작위 자동 제출로 해소하고(소통은 자동으로 하지 않는다), 임무 성공 정산은
+// 무작위 자동 제출로 해소하고(통신은 자동으로 하지 않는다), 임무 성공 정산은
 // 5초 뒤 자동으로 다음 임무를 연다 (테스트에서 짧게 낮춘다).
 var (
 	cwPlayTimeout   = 45 * time.Second // playing — 자동 제출
@@ -36,7 +36,7 @@ type cwRoom struct {
 	PhaseTimer *time.Timer       // 대기 상태 마감 타이머
 
 	// DeadlineSeq 마지막으로 마감을 건 StateSeq — 같은 대기 상태에 스냅샷이
-	// 쌓일 때마다(소통·관전 입장 등) 마감이 늘어나지 않게 하는 근거
+	// 쌓일 때마다(통신·관전 입장 등) 마감이 늘어나지 않게 하는 근거
 	DeadlineSeq int
 
 	// Code 사설 방 초대 코드 (공용 로비는 "")
@@ -445,7 +445,7 @@ func (h *CWHub) startGame(room *cwRoom) {
 
 	h.broadcastEvent(room, CWEventPayload{Kind: "game_started",
 		Message: fmt.Sprintf(
-			"게임 시작 — %d인 협력전, 임무를 %d단계까지 완수하면 클리어입니다. 소통은 임무마다 1회뿐입니다",
+			"게임 시작 — %d인 협력전, 임무를 %d단계까지 완수하면 클리어입니다. 통신은 임무마다 1회뿐입니다",
 			len(room.Game.Players), room.Game.MaxMission)})
 	h.afterProgress(room)
 }
@@ -540,7 +540,7 @@ func (h *CWHub) handlePlay(client *CWClient, msg CWMessage) {
 	h.afterProgress(room)
 }
 
-// handleCommunicate 소통 — 색 숫자 카드 공개 + 위치 선언.
+// handleCommunicate 통신 — 색 숫자 카드 공개 + 위치 선언.
 // 토큰 1회·트릭 시작 시점·로켓 불가·선언 진실 여부를 순수 규칙이 검증한다.
 func (h *CWHub) handleCommunicate(client *CWClient, msg CWMessage) {
 	room := h.roomOf(client)
@@ -558,7 +558,7 @@ func (h *CWHub) handleCommunicate(client *CWClient, msg CWMessage) {
 		return
 	}
 	revealed := game.Players[client.Seat].Revealed
-	log.Printf("[더크루][소통] game=%s | 임무%d seat%d=%s → %s (%s)",
+	log.Printf("[더크루][통신] game=%s | 임무%d seat%d=%s → %s (%s)",
 		game.ID, game.Mission, client.Seat, displayName(client.Name),
 		cwCardLabel(revealed.Card), cwHintLabel(revealed.Hint))
 	h.afterProgress(room)
@@ -592,7 +592,7 @@ func (h *CWHub) drainEvents(room *cwRoom) {
 // ==================== 대기 상태 마감 타이머 (AFK 진행 보장) ====================
 
 // syncDeadline 새 대기 상태(StateSeq 변경)가 열렸을 때만 마감을 다시 건다.
-// 같은 차례에 소통·관전 입장으로 스냅샷이 쌓여도 마감은 늘어나지 않는다.
+// 같은 차례에 통신·관전 입장으로 스냅샷이 쌓여도 마감은 늘어나지 않는다.
 func (h *CWHub) syncDeadline(room *cwRoom) {
 	game := room.Game
 	if room.DeadlineSeq == game.StateSeq {
@@ -632,7 +632,7 @@ func (h *CWHub) stopPhaseTimer(room *cwRoom) {
 }
 
 // handlePhaseFired 마감 발화 — 단계별 자동 행동으로 해소한다.
-//   - playing:   낼 수 있는 카드 중 무작위 자동 제출 (소통은 자동으로 하지 않는다)
+//   - playing:   낼 수 있는 카드 중 무작위 자동 제출 (통신은 자동으로 하지 않는다)
 //   - round_end: 다음 임무 배분
 func (h *CWHub) handlePhaseFired(sig cwPhaseSignal) {
 	room := h.rooms[sig.GameID]
@@ -655,7 +655,7 @@ func (h *CWHub) handlePhaseFired(sig cwPhaseSignal) {
 
 	case CWPhaseRoundEnd:
 		game.NextMission(h.rng)
-		log.Printf("[더크루][라운드] game=%s | %d번째 임무 시작 (임무 카드 %d장)",
+		log.Printf("[더크루][라운드] game=%s | %d번째 임무 시작 (과제 카드 %d장)",
 			game.ID, game.Mission, len(game.Tasks))
 
 	default:

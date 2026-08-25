@@ -54,7 +54,7 @@ var seForceEnd = 10 * time.Minute
 type SEShape string
 
 const (
-	SEShapeDiamond SEShape = "diamond" // 다이아
+	SEShapeDiamond SEShape = "diamond" // 다이아몬드
 	SEShapeWave    SEShape = "wave"    // 물결
 	SEShapeOval    SEShape = "oval"    // 타원
 )
@@ -96,7 +96,7 @@ var (
 func seShapeLabel(s SEShape) string {
 	switch s {
 	case SEShapeDiamond:
-		return "다이아"
+		return "다이아몬드"
 	case SEShapeWave:
 		return "물결"
 	case SEShapeOval:

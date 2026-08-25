@@ -284,7 +284,7 @@ func TestCWHiddenState(t *testing.T) {
 		}
 	}
 
-	// ---- 소통: 서버가 검증하고, 통과분은 전원 공개 ----
+	// ---- 통신: 서버가 검증하고, 통과분은 전원 공개 ----
 	// 거짓 선언은 거부되고 상태가 바뀌지 않는다 (파랑은 한 장뿐이라 highest 불가)
 	h.handleGameMessage(CWGameMessage{Client: clients[0], Message: CWMessage{
 		Type: CWMsgCommunicate, Payload: CWCommunicatePayload{Index: 0, Hint: CWHintHighest}}})
@@ -302,7 +302,7 @@ func TestCWHiddenState(t *testing.T) {
 	h.handleGameMessage(CWGameMessage{Client: clients[0], Message: CWMessage{
 		Type: CWMsgCommunicate, Payload: CWCommunicatePayload{Index: 1, Hint: CWHintOnly}}})
 	if game.Players[0].Revealed == nil || game.Players[0].TokenLeft != 0 {
-		t.Fatalf("참인 소통이 반영되지 않았다: %+v", game.Players[0])
+		t.Fatalf("참인 통신이 반영되지 않았다: %+v", game.Players[0])
 	}
 	wantRevealed := `"revealed":{"card":{"suit":"pink","rank":4},"hint":"only"}`
 	for _, viewer := range []int{0, 2, -1} {

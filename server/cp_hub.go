@@ -444,7 +444,7 @@ func (h *CPHub) startGame(room *cpRoom) {
 	first := room.Game.CurrentSeat
 	h.broadcastEvent(room, CPEventPayload{Kind: "game_started", Seat: &first,
 		Name: room.Game.Players[first].Name,
-		Message: fmt.Sprintf("게임 시작 — %s님부터 (비공개 카드 %d장, 시작 칩 %d개)",
+		Message: fmt.Sprintf("게임 시작 — %s님부터 (비공개 카드 %d장, 시작 은화 %d개)",
 			room.Game.Players[first].Name, CPCardsPerPlayer, CPStartChips)})
 	h.afterProgress(room)
 }

@@ -211,7 +211,7 @@ func (g *RFGame) checkTurn(seat int, kind RFActionKind) error {
 		return errors.New("당신의 차례가 아닙니다")
 	}
 	if g.Players[seat].Chips >= RFForceCoupChips && kind != RFActCoup {
-		return fmt.Errorf("칩이 %d개 이상이면 쿠만 할 수 있습니다", RFForceCoupChips)
+		return fmt.Errorf("은화가 %d개 이상이면 쿠데타만 할 수 있습니다", RFForceCoupChips)
 	}
 	return nil
 }
@@ -239,28 +239,28 @@ func (g *RFGame) DeclareAction(seat int, kind RFActionKind, target int, rng *ran
 	switch kind {
 	case RFActIncome:
 		actor.Chips++
-		g.emit("action", seat, fmt.Sprintf("%s님이 수입으로 1칩을 얻었습니다", actor.Name))
+		g.emit("action", seat, fmt.Sprintf("%s님이 소득으로 은화 1개를 얻었습니다", actor.Name))
 		g.nextTurn()
 
 	case RFActAid:
 		g.Pending = &RFPending{Kind: kind, ActorSeat: seat, TargetSeat: -1, BlockerSeat: -1}
-		g.emit("action", seat, fmt.Sprintf("%s님이 해외원조로 2칩을 받으려 합니다", actor.Name))
+		g.emit("action", seat, fmt.Sprintf("%s님이 외부 원조로 은화 2개를 받으려 합니다", actor.Name))
 		g.openBlockWindow(rng)
 
 	case RFActCoup:
 		if actor.Chips < RFCoupCost {
-			return fmt.Errorf("쿠에는 칩 %d개가 필요합니다", RFCoupCost)
+			return fmt.Errorf("쿠데타에는 은화 %d개가 필요합니다", RFCoupCost)
 		}
 		actor.Chips -= RFCoupCost
 		g.Pending = &RFPending{Kind: kind, ActorSeat: seat, TargetSeat: target, BlockerSeat: -1}
-		g.emit("action", seat, fmt.Sprintf("%s님이 칩 %d개로 %s님에게 쿠를 선언했습니다 — 차단·도전 불가",
+		g.emit("action", seat, fmt.Sprintf("%s님이 은화 %d개로 %s님에게 쿠데타를 선언했습니다 — 저지·도전 불가",
 			actor.Name, RFCoupCost, g.Players[target].Name))
 		g.enterLose(target, rfAfterNextTurn, rng)
 
 	case RFActTax, RFActAssassinate, RFActSteal, RFActExchange:
 		if kind == RFActAssassinate {
 			if actor.Chips < RFAssassinCost {
-				return fmt.Errorf("암살에는 칩 %d개가 필요합니다", RFAssassinCost)
+				return fmt.Errorf("암살에는 은화 %d개가 필요합니다", RFAssassinCost)
 			}
 			actor.Chips -= RFAssassinCost
 		}
@@ -272,20 +272,20 @@ func (g *RFGame) DeclareAction(seat int, kind RFActionKind, target int, rng *ran
 		g.Pending = p
 		switch kind {
 		case RFActTax:
-			g.emit("action", seat, fmt.Sprintf("%s님이 세금(공작 주장)으로 3칩을 걷으려 합니다", actor.Name))
+			g.emit("action", seat, fmt.Sprintf("%s님이 세금 징수(공작 주장)로 은화 3개를 걷으려 합니다", actor.Name))
 		case RFActAssassinate:
-			g.emit("action", seat, fmt.Sprintf("%s님이 칩 %d개로 %s님 암살(암살자 주장)을 선언했습니다",
+			g.emit("action", seat, fmt.Sprintf("%s님이 은화 %d개로 %s님 암살(암살자 주장)을 선언했습니다",
 				actor.Name, RFAssassinCost, g.Players[target].Name))
 		case RFActSteal:
-			g.emit("action", seat, fmt.Sprintf("%s님이 %s님에게 강탈(사령관 주장)을 선언했습니다",
+			g.emit("action", seat, fmt.Sprintf("%s님이 %s님에게 갈취(사령관 주장)를 선언했습니다",
 				actor.Name, g.Players[target].Name))
 		case RFActExchange:
-			g.emit("action", seat, fmt.Sprintf("%s님이 교환(대사 주장)을 선언했습니다", actor.Name))
+			g.emit("action", seat, fmt.Sprintf("%s님이 캐릭터 교환(대사 주장)을 선언했습니다", actor.Name))
 		}
 		g.openChallengeWindow()
 
 	default:
-		return errors.New("알 수 없는 액션입니다")
+		return errors.New("알 수 없는 행동입니다")
 	}
 	return nil
 }
@@ -299,13 +299,13 @@ func (g *RFGame) SubmitConvert(seat int, rng *rand.Rand) error {
 	}
 	actor := g.Players[seat]
 	if actor.Chips < RFConvertSelfCost {
-		return fmt.Errorf("진영을 바꾸려면 칩 %d개가 필요합니다", RFConvertSelfCost)
+		return fmt.Errorf("개종하려면 은화 %d개가 필요합니다", RFConvertSelfCost)
 	}
 	actor.Chips -= RFConvertSelfCost
 	g.Treasury += RFConvertSelfCost
 	before := actor.Faction
 	actor.Faction = rfFlipFaction(before)
-	g.emit("convert", seat, fmt.Sprintf("%s님이 칩 %d개를 국고에 넣고 %s에서 %s로 개종했습니다 (국고 %d)",
+	g.emit("convert", seat, fmt.Sprintf("%s님이 은화 %d개를 피난처에 놓고 %s에서 %s로 개종했습니다 (피난처 %d)",
 		actor.Name, RFConvertSelfCost, rfFactionName(before), rfFactionName(actor.Faction), g.Treasury))
 	g.nextTurn()
 	return nil
@@ -322,7 +322,7 @@ func (g *RFGame) SubmitConvertOther(seat, target int, rng *rand.Rand) error {
 		return errors.New("대상을 올바르게 선택하세요")
 	}
 	if actor.Chips < RFConvertOtherCost {
-		return fmt.Errorf("남의 진영을 바꾸려면 칩 %d개가 필요합니다", RFConvertOtherCost)
+		return fmt.Errorf("남의 개종하려면 은화 %d개가 필요합니다", RFConvertOtherCost)
 	}
 	actor.Chips -= RFConvertOtherCost
 	g.Treasury += RFConvertOtherCost
@@ -330,7 +330,7 @@ func (g *RFGame) SubmitConvertOther(seat, target int, rng *rand.Rand) error {
 	before := victim.Faction
 	victim.Faction = rfFlipFaction(before)
 	g.emit("convert_other", seat, fmt.Sprintf(
-		"%s님이 칩 %d개를 국고에 넣고 %s님을 %s에서 %s로 개종시켰습니다 (국고 %d)",
+		"%s님이 은화 %d개를 피난처에 놓고 %s님을 %s에서 %s로 개종시켰습니다 (피난처 %d)",
 		actor.Name, RFConvertOtherCost, victim.Name,
 		rfFactionName(before), rfFactionName(victim.Faction), g.Treasury))
 	g.nextTurn()
@@ -349,7 +349,7 @@ func (g *RFGame) SubmitEmbezzle(seat int, rng *rand.Rand) error {
 	g.Pending = &RFPending{Kind: RFActEmbezzle, ActorSeat: seat, TargetSeat: -1,
 		ClaimRole: rfEmbezzleClaim, BlockerSeat: -1}
 	g.emit("action", seat, fmt.Sprintf(
-		"%s님이 횡령을 선언했습니다 — \"나는 공작이 아니다\"라며 국고 %d칩을 가져가려 합니다",
+		"%s님이 횡령을 선언했습니다 — \"나는 공작이 아니다\"라며 피난처의 은화 %d개를 가져가려 합니다",
 		actor.Name, g.Treasury))
 	g.openChallengeWindow()
 	return nil
@@ -384,12 +384,12 @@ func (g *RFGame) openBlockWindow(rng *rand.Rand) {
 	p.passed = map[int]bool{}
 	switch p.Kind {
 	case RFActAid:
-		p.Message = fmt.Sprintf("%s님의 해외원조 — 공작 주장으로 차단하거나 통과하세요",
+		p.Message = fmt.Sprintf("%s님의 외부 원조 — 공작 주장으로 저지하거나 통과하세요",
 			g.Players[p.ActorSeat].Name)
 	case RFActAssassinate:
-		p.Message = fmt.Sprintf("%s님은 백작부인 주장으로 차단할 수 있습니다", g.Players[p.TargetSeat].Name)
+		p.Message = fmt.Sprintf("%s님은 백작 부인 주장으로 저지할 수 있습니다", g.Players[p.TargetSeat].Name)
 	case RFActSteal:
-		p.Message = fmt.Sprintf("%s님은 사령관·대사 주장으로 차단할 수 있습니다", g.Players[p.TargetSeat].Name)
+		p.Message = fmt.Sprintf("%s님은 사령관·대사 주장으로 저지할 수 있습니다", g.Players[p.TargetSeat].Name)
 	}
 	g.Phase = RFPhaseBlockWindow
 	g.StateSeq++
@@ -401,7 +401,7 @@ func (g *RFGame) openBlockChallengeWindow() {
 	p := g.Pending
 	p.responders = g.respondersExcept(p.BlockerSeat)
 	p.passed = map[int]bool{}
-	p.Message = fmt.Sprintf("%s님의 차단(%s 주장) — 도전하거나 통과하세요",
+	p.Message = fmt.Sprintf("%s님의 저지(%s 주장) — 도전하거나 통과하세요",
 		g.Players[p.BlockerSeat].Name, rfRoleName(p.BlockRole))
 	g.Phase = RFPhaseChallengeWindow
 	g.StateSeq++
@@ -448,7 +448,7 @@ func (g *RFGame) passWindow(rng *rand.Rand) {
 	case RFPhaseChallengeWindow:
 		if g.blockChallenge() {
 			p := g.Pending
-			g.emit("block_success", p.BlockerSeat, fmt.Sprintf("%s님의 차단이 통과됐습니다 — %s이 취소됩니다",
+			g.emit("block_success", p.BlockerSeat, fmt.Sprintf("%s님의 저지가 통과됐습니다 — %s 행동이 취소됩니다",
 				g.Players[p.BlockerSeat].Name, rfActionName(p.Kind)))
 			g.nextTurn()
 			return
@@ -505,7 +505,7 @@ func (g *RFGame) challengeAction(seat int, rng *rand.Rand) {
 		return
 	}
 	g.emit("challenge_success", p.ActorSeat, fmt.Sprintf(
-		"도전 성공 — %s님에게 %s 카드가 없었습니다. %s이 취소되고 카드 1장을 잃습니다",
+		"도전 성공 — %s님에게 %s 카드가 없었습니다. %s 행동이 취소되고 카드 1장을 잃습니다",
 		claimant.Name, rfRoleName(p.ClaimRole), rfActionName(p.Kind)))
 	if p.Kind == RFActAssassinate {
 		claimant.Chips += RFAssassinCost // 거짓 암살은 취소 — 지불한 비용 반환
@@ -545,18 +545,18 @@ func (g *RFGame) challengeEmbezzle(seat int, rng *rand.Rand) {
 func (g *RFGame) challengeBlock(seat int, rng *rand.Rand) {
 	p := g.Pending
 	blocker := g.Players[p.BlockerSeat]
-	g.emit("challenge", seat, fmt.Sprintf("%s님이 %s님의 차단(%s 주장)에 도전했습니다",
+	g.emit("challenge", seat, fmt.Sprintf("%s님이 %s님의 저지(%s 주장)에 도전했습니다",
 		g.Players[seat].Name, blocker.Name, rfRoleName(p.BlockRole)))
 	if blocker.HasHidden(p.BlockRole) {
 		g.proveClaim(blocker, p.BlockRole, rng)
 		g.emit("challenge_fail", seat, fmt.Sprintf(
-			"도전 실패 — %s님이 실제 %s 카드를 공개했습니다. 차단이 성립해 %s이 취소되고 %s님이 카드 1장을 잃습니다",
+			"도전 실패 — %s님이 실제 %s 카드를 공개했습니다. 저지가 성립해 %s 행동이 취소되고 %s님이 카드 1장을 잃습니다",
 			blocker.Name, rfRoleName(p.BlockRole), rfActionName(p.Kind), g.Players[seat].Name))
 		g.enterLose(seat, rfAfterNextTurn, rng)
 		return
 	}
 	g.emit("challenge_success", p.BlockerSeat, fmt.Sprintf(
-		"도전 성공 — %s님에게 %s 카드가 없었습니다. 차단이 무효가 되고 카드 1장을 잃습니다",
+		"도전 성공 — %s님에게 %s 카드가 없었습니다. 저지가 무효가 되고 카드 1장을 잃습니다",
 		blocker.Name, rfRoleName(p.BlockRole)))
 	g.enterLose(p.BlockerSeat, rfAfterResolve, rng)
 }
@@ -596,14 +596,14 @@ func (g *RFGame) redrawHand(p *RFPlayer, rng *rand.Rand) {
 // 진영도 가능), 암살·강탈은 대상만 차단할 수 있다.
 func (g *RFGame) SubmitBlock(seat int, role RFRole) error {
 	if g.Phase != RFPhaseBlockWindow || g.Pending == nil {
-		return errors.New("지금은 차단할 수 없습니다")
+		return errors.New("지금은 저지할 수 없습니다")
 	}
 	p := g.Pending
 	if !p.responders[seat] {
-		return errors.New("차단할 수 없는 좌석입니다")
+		return errors.New("저지할 수 없는 좌석입니다")
 	}
 	if (p.Kind == RFActAssassinate || p.Kind == RFActSteal) && seat != p.TargetSeat {
-		return errors.New("대상만 차단할 수 있습니다")
+		return errors.New("대상만 저지할 수 있습니다")
 	}
 	valid := false
 	for _, r := range rfBlockRoles[p.Kind] {
@@ -612,11 +612,11 @@ func (g *RFGame) SubmitBlock(seat int, role RFRole) error {
 		}
 	}
 	if !valid {
-		return errors.New("이 액션을 차단할 수 없는 역할입니다")
+		return errors.New("이 행동을 저지할 수 없는 역할입니다")
 	}
 	p.BlockerSeat = seat
 	p.BlockRole = role
-	g.emit("block", seat, fmt.Sprintf("%s님이 %s 주장으로 %s을 차단했습니다",
+	g.emit("block", seat, fmt.Sprintf("%s님이 %s 주장으로 %s 행동을 저지했습니다",
 		g.Players[seat].Name, rfRoleName(role), rfActionName(p.Kind)))
 	g.openBlockChallengeWindow()
 	return nil
@@ -698,19 +698,19 @@ func (g *RFGame) resolveAction(rng *rand.Rand) {
 	switch p.Kind {
 	case RFActAid:
 		actor.Chips += 2
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 해외원조로 2칩을 받았습니다", actor.Name))
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 외부 원조로 은화 2개를 받았습니다", actor.Name))
 		g.nextTurn()
 
 	case RFActTax:
 		actor.Chips += 3
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 세금으로 3칩을 걷었습니다", actor.Name))
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 세금 징수로 은화 3개를 걷었습니다", actor.Name))
 		g.nextTurn()
 
 	case RFActEmbezzle:
 		amount := g.Treasury
 		g.Treasury = 0
 		actor.Chips += amount
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 국고 %d칩을 횡령했습니다 (국고 0)",
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 피난처의 은화 %d개를 횡령했습니다 (피난처 0)",
 			actor.Name, amount))
 		g.nextTurn()
 
@@ -723,7 +723,7 @@ func (g *RFGame) resolveAction(rng *rand.Rand) {
 			}
 			target.Chips -= amt
 			actor.Chips += amt
-			g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 %s님에게서 %d칩을 강탈했습니다",
+			g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 %s님에게서 은화 %d개를 갈취했습니다",
 				actor.Name, target.Name, amt))
 		}
 		g.nextTurn()
@@ -746,7 +746,7 @@ func (g *RFGame) resolveAction(rng *rand.Rand) {
 		g.ExchangeCards = append(actor.HiddenRoles(), g.Deck[:draw]...)
 		g.Deck = g.Deck[draw:]
 		p.Message = fmt.Sprintf("%s님이 유지할 카드를 고르는 중입니다", actor.Name)
-		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 덱에서 %d장을 뽑아 교환을 시작합니다",
+		g.emit("resolve", p.ActorSeat, fmt.Sprintf("%s님이 궁정 덱에서 %d장을 뽑아 캐릭터 교환을 시작합니다",
 			actor.Name, draw))
 		g.Phase = RFPhaseExchange
 		g.StateSeq++
@@ -757,7 +757,7 @@ func (g *RFGame) resolveAction(rng *rand.Rand) {
 // 비공개 장수만큼 고른다. 나머지는 덱에 반납하고 섞는다.
 func (g *RFGame) SubmitExchange(seat int, keep []int, rng *rand.Rand) error {
 	if g.Phase != RFPhaseExchange || g.Pending == nil || seat != g.Pending.ActorSeat {
-		return errors.New("지금은 교환 선택을 할 수 없습니다")
+		return errors.New("지금은 캐릭터 교환 선택을 할 수 없습니다")
 	}
 	actor := g.Players[seat]
 	hidden := actor.HiddenIdx()
@@ -781,7 +781,7 @@ func (g *RFGame) SubmitExchange(seat int, keep []int, rng *rand.Rand) error {
 	}
 	rng.Shuffle(len(g.Deck), func(a, b int) { g.Deck[a], g.Deck[b] = g.Deck[b], g.Deck[a] })
 	g.ExchangeCards = nil
-	g.emit("exchange_done", seat, fmt.Sprintf("%s님이 교환을 마쳤습니다", actor.Name))
+	g.emit("exchange_done", seat, fmt.Sprintf("%s님이 캐릭터 교환을 마쳤습니다", actor.Name))
 	g.nextTurn()
 	return nil
 }

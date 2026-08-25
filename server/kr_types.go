@@ -73,7 +73,7 @@ func krRoleLabel(role string) string {
 	case string(KRRoleExpedition):
 		return "탐험대"
 	case string(KRRoleSkeleton):
-		return "해골단"
+		return "해골"
 	default:
 		return "?"
 	}

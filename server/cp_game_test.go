@@ -154,7 +154,7 @@ func TestCPBlockPasses(t *testing.T) {
 	if g.Phase != CPPhaseAction || g.CurrentSeat != 1 {
 		t.Fatalf("턴 전환 실패: phase=%s current=%d", g.Phase, g.CurrentSeat)
 	}
-	if !strings.Contains(cpEventText(g), "차단이 통과") {
+	if !strings.Contains(cpEventText(g), "저지가 통과") {
 		t.Fatal("차단 통과 이벤트 부재")
 	}
 }
@@ -235,7 +235,7 @@ func TestCPForcedCoupAndElimination(t *testing.T) {
 	// 칩 10+ 는 쿠 외 전부 거부
 	g.Players[0].Chips = CPForceCoupChips
 	if err := g.DeclareAction(0, CPActIncome, -1, rng); err == nil ||
-		!strings.Contains(err.Error(), "쿠만") {
+		!strings.Contains(err.Error(), "쿠데타만") {
 		t.Fatalf("쿠 강제 미적용 (income): %v", err)
 	}
 	if err := g.DeclareAction(0, CPActTax, -1, rng); err == nil {

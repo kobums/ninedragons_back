@@ -6,7 +6,7 @@ import (
 
 // ==================== 스컬 타입 ====================
 //
-// 3~6인 배팅 심리전. 각자 원판 4장(장미 3 + 해골 1)으로 배치 → 배팅 →
+// 3~6인 베팅 심리전. 각자 원판 4장(장미 3 + 해골 1)으로 배치 → 베팅 →
 // 뒤집기를 반복한다. 손패·더미 내용·제거된 카드가 전부 비공개라 개인화
 // 스냅샷(buildSKState)이 유일한 정보 통로다.
 
@@ -97,8 +97,8 @@ type SKPlayer struct {
 	// 장수만 공개, 내용은 비공개다. 뒤집힌 카드는 여기서 빠져 Flipped 로 간다.
 	Stack []SKCard
 
-	Passed bool // 이번 라운드 배팅에서 빠졌는지
-	Bid    int  // 현재 배팅 (0 = 없음)
+	Passed bool // 이번 라운드 베팅에서 빠졌는지
+	Bid    int  // 현재 베팅 (0 = 없음)
 }
 
 // SKGame 스컬 게임 상태 (순수, 허브 비의존)
@@ -157,7 +157,7 @@ type SKPlacePayload struct {
 	Index int `json:"index"`
 }
 
-// SKBidPayload 배팅 선언 (장미 count 장을 뒤집겠다)
+// SKBidPayload 베팅 선언 (장미 count 장을 뒤집겠다)
 type SKBidPayload struct {
 	Count int `json:"count"`
 }
