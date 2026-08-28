@@ -50,6 +50,8 @@ func main() {
 	sbHub := server.NewSBHub()
 	slHub := server.NewSLHub()
 	azHub := server.NewAZHub()
+	ctHub := server.NewCTHub()
+	suHub := server.NewSUHub()
 
 	endpoints := []struct {
 		name    string
@@ -137,6 +139,10 @@ func main() {
 			func(w http.ResponseWriter, r *http.Request) { server.ServeSLWs(slHub, w, r) }},
 		{"Azul", "/ws/azul", azHub.Run,
 			func(w http.ResponseWriter, r *http.Request) { server.ServeAZWs(azHub, w, r) }},
+		{"Citadels", "/ws/citadels", ctHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeCTWs(ctHub, w, r) }},
+		{"Startups", "/ws/startups", suHub.Run,
+			func(w http.ResponseWriter, r *http.Request) { server.ServeSUWs(suHub, w, r) }},
 	}
 
 	// 전적 기록 (JSONL). 경로는 볼륨 마운트 지점 아래로.
