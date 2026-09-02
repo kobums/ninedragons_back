@@ -1007,12 +1007,7 @@ func (h *TCHub) handleRejoin(client *TCClient, msg TCMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *TCHub) clearGameSessions(room *tcRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

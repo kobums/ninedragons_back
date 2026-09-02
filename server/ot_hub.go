@@ -603,12 +603,7 @@ func (h *OTHub) handleRejoin(client *OTClient, msg OTMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *OTHub) clearGameSessions(room *otRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 라벨 / 전송 ====================

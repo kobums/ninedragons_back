@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -327,17 +326,7 @@ func (h *SKHub) waitingRoomOf(client *SKClient) *skRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *SKHub) hostSeat(room *skRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // handleFillBots host 가 정원(6)까지 연습봇으로 채운다. 시작은 별도의 sk_start.
@@ -391,13 +380,7 @@ func (h *SKHub) handleStart(client *SKClient) {
 
 // skHumanCount 방의 사람 수
 func skHumanCount(room *skRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // skRoomHasBot 방에 연습봇이 있는지 (전적 기록용)
@@ -687,10 +670,7 @@ func (h *SKHub) scheduleDeadline(room *skRoom, dur time.Duration) {
 }
 
 func (h *SKHub) stopPhaseTimer(room *skRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 // handlePhaseFired 단계 타임아웃 — 자동 행동으로 해소한다
@@ -1053,12 +1033,7 @@ func (h *SKHub) handleRejoin(client *SKClient, msg SKMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *SKHub) clearGameSessions(room *skRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -329,28 +328,12 @@ func (h *NMHub) waitingRoomOf(client *NMClient) *nmRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *NMHub) hostSeat(room *nmRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // nmHumanCount 방의 사람 수
 func nmHumanCount(room *nmRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작.
@@ -653,10 +636,7 @@ func (h *NMHub) scheduleDeadline(room *nmRoom, dur time.Duration) {
 }
 
 func (h *NMHub) stopPhaseTimer(room *nmRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 // handlePhaseFired 단계 타임아웃 — 자동 행동으로 해소한다
@@ -991,12 +971,7 @@ func (h *NMHub) handleRejoin(client *NMClient, msg NMMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *NMHub) clearGameSessions(room *nmRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

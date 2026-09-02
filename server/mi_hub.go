@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -325,28 +324,12 @@ func (h *MIHub) waitingRoomOf(client *MIClient) *miRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *MIHub) hostSeat(room *miRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // miHumanCount 방의 사람 수
 func miHumanCount(room *miRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // updateLobbyWaiting 로비 현황판 갱신 — 사설 방은 노출하지 않는다
@@ -634,10 +617,7 @@ func (h *MIHub) schedulePhase(room *miRoom, d time.Duration) {
 }
 
 func (h *MIHub) stopPhaseTimer(room *miRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 func (h *MIHub) scheduleStarWindow(room *miRoom) {
@@ -994,12 +974,7 @@ func (h *MIHub) handleRejoin(client *MIClient, msg MIMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *MIHub) clearGameSessions(room *miRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

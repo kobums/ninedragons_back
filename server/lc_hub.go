@@ -581,12 +581,7 @@ func (h *LCHub) handleRejoin(client *LCClient, msg LCMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *LCHub) clearGameSessions(room *lcRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 라벨 / 전송 ====================

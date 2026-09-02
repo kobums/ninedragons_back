@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
@@ -328,17 +327,7 @@ func (h *AVHub) waitingRoomOf(client *AVClient) *avRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *AVHub) hostSeat(room *avRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // handleFillBots host 가 최소 성립 인원(5)까지 연습봇으로 채운다.
@@ -393,13 +382,7 @@ func (h *AVHub) handleStart(client *AVClient) {
 
 // avHumanCount 방의 사람 수
 func avHumanCount(room *avRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // avRoomHasBot 방에 연습봇이 있는지 (전적 기록용)
@@ -703,10 +686,7 @@ func (h *AVHub) scheduleDeadline(room *avRoom, dur time.Duration) {
 }
 
 func (h *AVHub) stopPhaseTimer(room *avRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 // handlePhaseFired 단계 타임아웃 — 자동 행동으로 해소한다 (AFK 진행 보장)
@@ -1022,12 +1002,7 @@ func (h *AVHub) handleRejoin(client *AVClient, msg AVMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *AVHub) clearGameSessions(room *avRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

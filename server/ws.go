@@ -44,6 +44,9 @@ func (c *wsClient) SessionKey() string { return c.SessionID }
 // IsConnected 연결 유지 여부 (허브 고루틴에서만 호출)
 func (c *wsClient) IsConnected() bool { return c.Connected }
 
+// IsBot 서버 내장 봇 연결인지 (ntfy·유예·방장 판정에서 제외)
+func (c *wsClient) IsBot() bool { return c.Bot }
+
 // CloseConn 중복 접속 강제 종료용
 func (c *wsClient) CloseConn() { c.Conn.Close() }
 

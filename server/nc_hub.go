@@ -297,12 +297,7 @@ func (h *NCHub) opponentOf(room *ncRoom, team TeamColor) *NCClient {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *NCHub) clearGameSessions(room *ncRoom) {
-	for _, player := range room.Clients {
-		if player == nil {
-			continue
-		}
-		h.drop(player.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 func (h *NCHub) handleJoinGame(client *NCClient, msg NCMessage) {

@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -325,28 +324,12 @@ func (h *NTHub) waitingRoomOf(client *NTClient) *ntRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *NTHub) hostSeat(room *ntRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // ntHumanCount 방의 사람 수
 func ntHumanCount(room *ntRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작.
@@ -874,12 +857,7 @@ func (h *NTHub) handleRejoin(client *NTClient, msg NTMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *NTHub) clearGameSessions(room *ntRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

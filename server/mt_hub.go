@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
@@ -304,17 +303,7 @@ func (h *MTHub) waitingRoomOf(client *MTClient) *mtRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *MTHub) hostSeat(room *mtRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // handleFillBots host 가 남은 좌석을 연습봇으로 채운다 → 5좌석이 차며 자동 시작
@@ -351,13 +340,7 @@ func (h *MTHub) handleFillBots(client *MTClient) {
 
 // mtHumanCount 방의 사람 수
 func mtHumanCount(room *mtRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // mtRoomHasBot 방에 연습봇이 있는지 (ntfy 억제 판단용)
@@ -869,12 +852,7 @@ func (h *MTHub) handleRejoin(client *MTClient, msg MTMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *MTHub) clearGameSessions(room *mtRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

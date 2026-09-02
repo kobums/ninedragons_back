@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -325,28 +324,12 @@ func (h *CRHub) waitingRoomOf(client *CRClient) *crRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *CRHub) hostSeat(room *crRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // crHumanCount 방의 사람 수
 func crHumanCount(room *crRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작.
@@ -625,10 +608,7 @@ func (h *CRHub) scheduleDeadline(room *crRoom, dur time.Duration) {
 }
 
 func (h *CRHub) stopPhaseTimer(room *crRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 // handlePhaseFired 마감 발화 — 단계별 자동 행동으로 해소한다.
@@ -945,12 +925,7 @@ func (h *CRHub) handleRejoin(client *CRClient, msg CRMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *CRHub) clearGameSessions(room *crRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

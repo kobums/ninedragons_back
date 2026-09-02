@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
@@ -324,17 +323,7 @@ func (h *SFHub) waitingRoomOf(client *SFClient) *sfRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *SFHub) hostSeat(room *sfRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // handleFillBots host 가 최소 성립 인원(6)까지 연습봇으로 채운다.
@@ -389,13 +378,7 @@ func (h *SFHub) handleStart(client *SFClient) {
 
 // sfHumanCount 방의 사람 수
 func sfHumanCount(room *sfRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // sfRoomHasBot 방에 연습봇이 있는지 (전적 기록용)
@@ -948,12 +931,7 @@ func (h *SFHub) handleRejoin(client *SFClient, msg SFMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *SFHub) clearGameSessions(room *sfRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================

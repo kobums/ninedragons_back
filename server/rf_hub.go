@@ -329,28 +329,12 @@ func (h *RFHub) waitingRoomOf(client *RFClient) *rfRoom {
 
 // hostSeat 현재 접속 중인 사람의 가장 낮은 좌석 (호스트)
 func (h *RFHub) hostSeat(room *rfRoom) int {
-	seats := []int{}
-	for seat, c := range room.Clients {
-		if c != nil && c.Connected && !c.Bot {
-			seats = append(seats, seat)
-		}
-	}
-	if len(seats) == 0 {
-		return -1
-	}
-	sort.Ints(seats)
-	return seats[0]
+	return hostSeatOf(room.Clients)
 }
 
 // rfHumanCount 방의 사람 수
 func rfHumanCount(room *rfRoom) int {
-	n := 0
-	for _, c := range room.Clients {
-		if c != nil && !c.Bot {
-			n++
-		}
-	}
-	return n
+	return humanCountOf(room.Clients)
 }
 
 // updateLobbyWaiting 로비 현황판 갱신 — 사람 1명 이상 대기 && 미시작.
@@ -711,10 +695,7 @@ func (h *RFHub) scheduleDeadline(room *rfRoom, dur time.Duration) {
 }
 
 func (h *RFHub) stopPhaseTimer(room *rfRoom) {
-	if room.PhaseTimer != nil {
-		room.PhaseTimer.Stop()
-		room.PhaseTimer = nil
-	}
+	stopTimer(&room.PhaseTimer)
 }
 
 // handlePhaseFired 마감 발화 — 단계별 자동 행동으로 해소한다.
@@ -1100,12 +1081,7 @@ func (h *RFHub) handleRejoin(client *RFClient, msg RFMessage) {
 
 // clearGameSessions 게임이 정상 종료됐을 때 관련 세션·타이머 정리
 func (h *RFHub) clearGameSessions(room *rfRoom) {
-	for _, c := range room.Clients {
-		if c == nil {
-			continue
-		}
-		h.drop(c.SessionID)
-	}
+	clearRoomSessions(&h.sessionManager, room.Clients)
 }
 
 // ==================== 전송 ====================
