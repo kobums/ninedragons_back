@@ -163,13 +163,14 @@ func main() {
 		statsPath = "stats/matches.jsonl"
 	}
 	server.InitStats(statsPath)
-	http.HandleFunc("/stats", server.StatsHandler)
-	http.HandleFunc("/lobby", server.LobbyHandler)
+	// VisitNotify: 접속 IP 를 ntfy 로 알린다 (IP당 5분 묶음, 봇·내부 IP 제외).
+	http.HandleFunc("/stats", server.VisitNotify(server.StatsHandler))
+	http.HandleFunc("/lobby", server.VisitNotify(server.LobbyHandler))
 
 	log.Println("Server starting on :8003")
 	for _, ep := range endpoints {
 		go ep.run()
-		http.HandleFunc(ep.path, ep.handler)
+		http.HandleFunc(ep.path, server.VisitNotify(ep.handler))
 		log.Printf("  - %s: %s", ep.name, ep.path)
 	}
 
