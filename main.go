@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"ninedragons/server"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -163,6 +164,15 @@ func main() {
 		statsPath = "stats/matches.jsonl"
 	}
 	server.InitStats(statsPath)
+
+	// 접속 로그 (JSONL). 기본은 전적 기록과 같은 디렉터리 — 볼륨 마운트를
+	// 따로 신경 쓸 필요가 없다.
+	visitPath := os.Getenv("VISIT_LOG")
+	if visitPath == "" {
+		visitPath = filepath.Join(filepath.Dir(statsPath), "visits.jsonl")
+	}
+	server.InitVisitLog(visitPath)
+
 	// VisitNotify: 접속 IP 를 ntfy 로 알린다 (IP당 5분 묶음, 봇·내부 IP 제외).
 	http.HandleFunc("/stats", server.VisitNotify(server.StatsHandler))
 	http.HandleFunc("/lobby", server.VisitNotify(server.LobbyHandler))

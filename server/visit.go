@@ -84,21 +84,23 @@ func isBotAgent(agent string) bool {
 	return false
 }
 
-// sendVisitNotify 테스트에서 실제 발송 없이 검증할 수 있도록 변수로 뒀다.
-// notify 자체가 비동기라 요청 처리를 막지 않는다.
-var sendVisitNotify = func(ip, path string) {
-	notify("나인드래곤즈 접속", ip+"\n"+path)
-}
-
-// VisitNotify 는 핸들러 앞에서 접속 IP 를 ntfy 로 알리는 미들웨어다.
-// 알림 실패·미설정(NTFY_TOPIC 없음)이어도 요청 처리에는 영향이 없다.
+// VisitNotify 는 핸들러 앞에서 접속을 기록 큐에 넣는 미들웨어다. 적재는 모든
+// 외부 요청(봇 포함 — bot 플래그로 구분), 알림은 사람의 첫 접속(TTL 창)만.
+// 기록·알림이 실패하거나 미설정이어도 요청 처리에는 영향이 없다.
 func VisitNotify(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodOptions {
-			if ip := clientIP(r); ip != "" && !isInternalIP(ip) &&
-				!isBotAgent(r.Header.Get("User-Agent")) &&
-				shouldNotifyVisit(ip, time.Now()) {
-				sendVisitNotify(ip, r.URL.Path)
+			if ip := clientIP(r); ip != "" && !isInternalIP(ip) {
+				agent := r.Header.Get("User-Agent")
+				recordVisit(visitReq{
+					time:    time.Now(),
+					ip:      ip,
+					path:    r.URL.Path,
+					agent:   agent,
+					lang:    r.Header.Get("Accept-Language"),
+					referer: r.Header.Get("Referer"),
+					notify:  !isBotAgent(agent) && shouldNotifyVisit(ip, time.Now()),
+				})
 			}
 		}
 		next(w, r)

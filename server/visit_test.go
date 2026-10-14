@@ -60,10 +60,10 @@ func TestVisitNotifyMiddleware(t *testing.T) {
 	visitSeen = map[string]time.Time{}
 	visitMu.Unlock()
 
-	var got []string
-	orig := sendVisitNotify
-	sendVisitNotify = func(ip, path string) { got = append(got, ip+" "+path) }
-	defer func() { sendVisitNotify = orig }()
+	var got []visitReq
+	orig := recordVisit
+	recordVisit = func(req visitReq) { got = append(got, req) }
+	defer func() { recordVisit = orig }()
 
 	handled := 0
 	h := VisitNotify(func(w http.ResponseWriter, r *http.Request) { handled++ })
@@ -78,15 +78,26 @@ func TestVisitNotifyMiddleware(t *testing.T) {
 	}
 
 	send("1.2.3.4", "Mozilla/5.0")
-	send("1.2.3.4", "Mozilla/5.0")    // TTL 안 중복 — 알림 없음
-	send("172.22.0.5", "Mozilla/5.0") // 내부 IP — 알림 없음
-	send("2.3.4.5", "Googlebot/2.1")  // 봇 — 알림 없음
-	send("3.4.5.6", "curl/8.0")       // curl — 알림 없음
+	send("1.2.3.4", "Mozilla/5.0")    // TTL 안 중복 — 적재는 되고 알림만 없음
+	send("172.22.0.5", "Mozilla/5.0") // 내부 IP — 적재도 알림도 없음
+	send("2.3.4.5", "Googlebot/2.1")  // 봇 — 적재는 되고 알림만 없음
 
-	if handled != 5 {
-		t.Fatalf("핸들러는 항상 실행되어야 한다: %d/5", handled)
+	if handled != 4 {
+		t.Fatalf("핸들러는 항상 실행되어야 한다: %d/4", handled)
 	}
-	if len(got) != 1 || got[0] != "1.2.3.4 /ws/azul" {
-		t.Fatalf("알림은 사람 첫 접속 한 번만: %v", got)
+	if len(got) != 3 {
+		t.Fatalf("외부 요청 3건이 적재되어야 한다: %d건 %v", len(got), got)
+	}
+	var notified []string
+	for _, req := range got {
+		if req.path != "/ws/azul" {
+			t.Errorf("경로 기록 오류: %q", req.path)
+		}
+		if req.notify {
+			notified = append(notified, req.ip)
+		}
+	}
+	if len(notified) != 1 || notified[0] != "1.2.3.4" {
+		t.Fatalf("알림은 사람 첫 접속 한 번만: %v", notified)
 	}
 }
