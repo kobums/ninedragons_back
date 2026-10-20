@@ -28,7 +28,7 @@ func lobbySetWaiting(game string, waiting bool) {
 
 // LobbyHandler GET /lobby — 대기자가 있는 게임 목록
 func LobbyHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setCORS(w, r)
 	w.Header().Set("Content-Type", "application/json")
 
 	waiting := []string{}

@@ -336,9 +336,9 @@ func (s *statsStore) playerDetail(name string) *statsPlayerDetail {
 
 // StatsHandler GET /stats — 총 판수·게임별 판수·최근 경기·플레이어 집계.
 // ?player=NAME 이면 그 플레이어의 상세(playerDetail)를 함께 준다.
-// 프론트(ninedragons.gowoobro.com)와 API 도메인이 달라 CORS 를 연다.
+// 프론트(ninedragons.gowoobro.com)와 API 도메인이 달라 허용 origin 에만 CORS 를 연다.
 func StatsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setCORS(w, r)
 	w.Header().Set("Content-Type", "application/json")
 
 	player := r.URL.Query().Get("player")

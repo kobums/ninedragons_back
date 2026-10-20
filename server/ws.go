@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"log"
-	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -19,9 +18,7 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // 개발 환경에서는 모든 origin 허용
-	},
+	CheckOrigin:     checkWSOrigin, // ALLOWED_ORIGINS 허용 목록 (origin.go)
 }
 
 // wsClient 다섯 게임 클라이언트가 공유하는 연결 필드. 각 XClient 가 값으로
