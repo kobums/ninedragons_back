@@ -40,8 +40,10 @@ func TestStatsRecordAndRestore(t *testing.T) {
 
 	// 핸들러 응답 검증
 	rec := httptest.NewRecorder()
-	StatsHandler(rec, httptest.NewRequest("GET", "/stats", nil))
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+	req := httptest.NewRequest("GET", "/stats", nil)
+	req.Header.Set("Origin", "https://ninedragons.gowoobro.com")
+	StatsHandler(rec, req)
+	if rec.Header().Get("Access-Control-Allow-Origin") != "https://ninedragons.gowoobro.com" {
 		t.Error("CORS 헤더가 없다")
 	}
 	var resp statsResponse

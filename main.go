@@ -173,6 +173,9 @@ func main() {
 	}
 	server.InitVisitLog(visitPath)
 
+	// 브라우저 origin 허용 목록 (WebSocket·/stats·/lobby CORS). 미설정 시 기본값 + 경고.
+	server.InitAllowedOrigins()
+
 	// VisitNotify: 접속 IP 를 ntfy 로 알린다 (IP당 5분 묶음, 봇·내부 IP 제외).
 	http.HandleFunc("/stats", server.VisitNotify(server.StatsHandler))
 	http.HandleFunc("/lobby", server.VisitNotify(server.LobbyHandler))
