@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -79,26 +81,136 @@ var recordVisit = func(req visitReq) {
 	}
 }
 
-// runVisitLog 기록 고루틴: 지오 조회 → 파일 append → 알림
+// visitRetention 접속 로그 보관 기간. IP·기기 정보가 담기므로 이보다 오래된
+// 줄은 지운다. 전적 기록(stats.go)은 게임 기능이라 대상이 아니다.
+const visitRetention = 90 * 24 * time.Hour
+
+// visitPruneInterval 보관 기간 정리 주기 (시작 시 한 번 + 이후 매 주기)
+const visitPruneInterval = 24 * time.Hour
+
+// runVisitLog 기록 고루틴: 지오 조회 → 파일 append → 알림. 보관 기간 정리도
+// 이 고루틴이 한다 — 파일을 만지는 곳이 여기 하나뿐이라 잠금 없이도 append 와
+// 재작성이 겹치지 않는다.
 func runVisitLog(path string, ch chan visitReq) {
-	for req := range ch {
-		rec := buildVisitRecord(req)
+	pruneVisits(path)
+	ticker := time.NewTicker(visitPruneInterval)
+	defer ticker.Stop()
 
-		if data, err := json.Marshal(rec); err == nil {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-			if err != nil {
-				log.Printf("[visit] 기록 실패: %v", err)
-			} else {
-				f.Write(append(data, '\n'))
-				f.Close()
+	for {
+		select {
+		case req, ok := <-ch:
+			if !ok {
+				return
 			}
-		}
-
-		// 라이브러리가 봇으로 판정한 경우(isBotAgent 보다 넓다)도 알림은 거른다
-		if req.notify && !rec.Bot {
-			sendVisitNotify(rec)
+			writeVisit(path, req)
+		case <-ticker.C:
+			pruneVisits(path)
 		}
 	}
+}
+
+// writeVisit 접속 한 건을 파일에 덧붙이고 필요하면 알린다
+func writeVisit(path string, req visitReq) {
+	rec := buildVisitRecord(req)
+
+	if data, err := json.Marshal(rec); err == nil {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			log.Printf("[visit] 기록 실패: %v", err)
+		} else {
+			f.Write(append(data, '\n'))
+			f.Close()
+		}
+	}
+
+	// 라이브러리가 봇으로 판정한 경우(isBotAgent 보다 넓다)도 알림은 거른다
+	if req.notify && !rec.Bot {
+		sendVisitNotify(rec)
+	}
+}
+
+// pruneVisits 보관 기간이 지난 줄을 지우고 결과를 로그로 남긴다
+func pruneVisits(path string) {
+	removed, err := pruneVisitLog(path, time.Now().Add(-visitRetention))
+	if err != nil {
+		log.Printf("[visit] 보관 기간 정리 실패: %v", err)
+		return
+	}
+	if removed > 0 {
+		log.Printf("[visit] 보관 기간(%d일) 지난 기록 %d건 삭제", int(visitRetention.Hours()/24), removed)
+	}
+}
+
+// pruneVisitLog cutoff 보다 오래된 줄을 뺀 내용으로 파일을 다시 쓴다. 같은
+// 디렉터리에 임시 파일을 만든 뒤 rename 으로 바꿔치기하므로 도중에 죽어도 원본이
+// 깨지지 않는다. 지울 줄이 없으면 원본을 건드리지 않는다. 해석할 수 없는 줄은
+// 시각을 알 수 없으므로 지우지 않고 그대로 둔다. 파일이 없으면 할 일이 없다.
+func pruneVisitLog(path string, cutoff time.Time) (removed int, err error) {
+	src, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer src.Close()
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(tmp.Name()) // rename 에 성공했으면 이미 없는 이름이라 무해
+	defer tmp.Close()
+
+	r := bufio.NewReader(src)
+	w := bufio.NewWriter(tmp)
+	for {
+		line, readErr := r.ReadBytes('\n')
+		if len(line) > 0 {
+			var rec struct {
+				Time time.Time `json:"time"`
+			}
+			if json.Unmarshal(line, &rec) == nil && !rec.Time.IsZero() && rec.Time.Before(cutoff) {
+				removed++
+			} else {
+				if _, err := w.Write(line); err != nil {
+					return 0, err
+				}
+				// 마지막 줄이 개행 없이 끝났어도 다음 append 와 붙지 않게
+				if line[len(line)-1] != '\n' {
+					if err := w.WriteByte('\n'); err != nil {
+						return 0, err
+					}
+				}
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return 0, readErr
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+
+	if err := w.Flush(); err != nil {
+		return 0, err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return 0, err
+	}
+	if err := tmp.Sync(); err != nil {
+		return 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
 
 // buildVisitRecord UA 파싱과 지오 조회로 기록을 완성한다. 봇은 지오 조회를

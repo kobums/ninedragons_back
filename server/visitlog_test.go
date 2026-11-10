@@ -1,6 +1,10 @@
 package server
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,5 +84,76 @@ func TestVisitMessage(t *testing.T) {
 	bare := VisitRecord{IP: "1.2.3.4", Path: "/lobby"}
 	if got := visitMessage(bare); got != "1.2.3.4\n/lobby" {
 		t.Errorf("visitMessage 최소 = %q", got)
+	}
+}
+
+func TestPruneVisitLog(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "visits.jsonl")
+	now := time.Now()
+	cutoff := now.Add(-visitRetention)
+
+	line := func(ip string, at time.Time) string {
+		data, err := json.Marshal(VisitRecord{Time: at, IP: ip, Path: "/lobby"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	old1 := line("1.1.1.1", cutoff.Add(-time.Hour))
+	old2 := line("2.2.2.2", cutoff.Add(-100*24*time.Hour))
+	fresh1 := line("3.3.3.3", cutoff.Add(time.Hour))
+	fresh2 := line("4.4.4.4", now)
+	broken := `{"time":"깨진 줄`
+
+	// 마지막 줄은 개행 없이 끝난다 (쓰다 만 줄 흉내)
+	content := strings.Join([]string{old1, fresh1, broken, old2, fresh2}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := pruneVisitLog(path, cutoff)
+	if err != nil {
+		t.Fatalf("pruneVisitLog: %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("삭제 건수 = %d, want 2", removed)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 순서 유지, 해석 못 한 줄은 보존, 끝은 개행으로 마무리
+	want := fresh1 + "\n" + broken + "\n" + fresh2 + "\n"
+	if string(got) != want {
+		t.Errorf("정리 후 내용 =\n%s\nwant\n%s", got, want)
+	}
+
+	// 임시 파일이 남으면 안 된다
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("디렉터리에 파일 %d개 — 임시 파일이 남았다", len(entries))
+	}
+
+	// 지울 것이 없으면 원본을 건드리지 않는다
+	if removed, err := pruneVisitLog(path, cutoff); err != nil || removed != 0 {
+		t.Errorf("재실행: removed=%d err=%v", removed, err)
+	}
+	if again, _ := os.ReadFile(path); string(again) != want {
+		t.Error("지울 것이 없는데 내용이 바뀌었다")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("재실행 후 파일 %d개 — 임시 파일이 남았다", len(entries))
+	}
+}
+
+func TestPruneVisitLogMissingFile(t *testing.T) {
+	removed, err := pruneVisitLog(filepath.Join(t.TempDir(), "visits.jsonl"), time.Now())
+	if removed != 0 || err != nil {
+		t.Errorf("파일이 없으면 조용히 넘어가야 한다: removed=%d err=%v", removed, err)
 	}
 }
